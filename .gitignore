@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Environment variables — NEVER commit these
+.env
+.env.local
+.env.*.local
+server/.env
+
+# Database — contains real user data
+server/database.db
+*.db
+*.sqlite
+
+# Build output
+dist/
+build/
+client/dist/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Claude Code settings
+.claude/
+
+# Vite cache
+client/.vite/
+**/.vite/

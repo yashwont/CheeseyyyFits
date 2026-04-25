@@ -1,0 +1,13 @@
+{
+  "name": "CHEEZEYY FITS",
+  "short_name": "CHEEZEYY",
+  "description": "Street fashion — wear the attitude, own the street.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#ff0000",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

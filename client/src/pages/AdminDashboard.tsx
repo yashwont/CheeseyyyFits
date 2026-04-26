@@ -15,7 +15,7 @@ import { bulkProductAction, exportOrdersCSV, exportProductsCSV,
   fetchAllReturns, updateReturnStatus, sendMarketingBlast, fetchProducts as apiFetchProducts } from '../api';
 
 type Product = { id: number; name: string; description: string; price: number; image: string; category: string; size: string; stock: number };
-type User = { id: number; username: string; email: string; role: string; isVerified: boolean; createdAt: string };
+type User = { id: number; username: string; email: string; role: string; isVerified: boolean; avatar?: string; createdAt: string };
 type Order = { id: number; userId: number; username: string; email: string; total: number; discount: number; status: string; createdAt: string; items: OrderItem[] };
 type OrderItem = { id: number; name: string; price: number; quantity: number; size: string };
 type Coupon = { id: number; code: string; discountType: string; discountValue: number; minOrder: number; maxUses: number | null; usesCount: number; expiresAt: string | null; active: boolean };
@@ -65,7 +65,7 @@ export default function AdminDashboard() {
     if (tab === 'users') fetchAllUsers().then(setUsers).catch(() => toast.error('Failed to load users'));
     if (tab === 'orders') fetchAllOrders().then(setOrders).catch(() => toast.error('Failed to load orders'));
     if (tab === 'coupons') loadCoupons();
-    if (tab === 'flash-sales') { fetchAllFlashSales().then(setFlashSales).catch(() => {}); loadProducts(); }
+    if (tab === 'flash-sales') { fetchAllFlashSales().then(setFlashSales).catch(() => toast.error('Failed to load flash sales')); loadProducts(); }
     if (tab === 'returns') fetchAllReturns().then(setReturns).catch(() => {});
     if (tab === 'marketing') loadProducts();
   }, [tab]);
@@ -124,7 +124,15 @@ export default function AdminDashboard() {
   };
 
   const handleRoleChange = async (userId: number, role: string) => {
-    try { await updateUserRole(userId, role); setUsers((u) => u.map((x) => x.id === userId ? { ...x, role } : x)); toast.success('Role updated'); }
+    try {
+      await updateUserRole(userId, role);
+      setUsers((u) => u.map((x) => x.id === userId ? { ...x, role } : x));
+      toast.success('Role updated');
+      if (userId === Number(localStorage.getItem('userId'))) {
+        clearAuth();
+        navigate('/login');
+      }
+    }
     catch { toast.error('Failed'); }
   };
 
@@ -161,10 +169,16 @@ export default function AdminDashboard() {
   const handleCreateFlashSale = async () => {
     if (!flashForm.productId || !flashForm.salePrice || !flashForm.endsAt)
       return toast.error('Product, sale price and end date are required');
+    const startsAt = flashForm.startsAt ? new Date(flashForm.startsAt).toISOString() : new Date().toISOString();
+    const endsAt = new Date(flashForm.endsAt).toISOString();
+    if (new Date(endsAt) <= new Date(startsAt))
+      return toast.error('End time must be after start time');
     try {
-      await createFlashSale({ ...flashForm, productId: parseInt(flashForm.productId), salePrice: parseFloat(flashForm.salePrice), startsAt: flashForm.startsAt || new Date().toISOString() });
-      toast.success('Flash sale created'); setShowFlashForm(false);
-      fetchAllFlashSales().then(setFlashSales).catch(() => {});
+      await createFlashSale({ productId: parseInt(flashForm.productId), salePrice: parseFloat(flashForm.salePrice), startsAt, endsAt });
+      toast.success('Flash sale created');
+      setShowFlashForm(false);
+      setFlashForm({ productId: '', salePrice: '', startsAt: '', endsAt: '' });
+      fetchAllFlashSales().then(setFlashSales).catch(() => toast.error('Failed to reload flash sales'));
     } catch (err: any) { toast.error(err.response?.data?.message || 'Failed'); }
   };
 
@@ -301,10 +315,15 @@ export default function AdminDashboard() {
           <h2 className="tab-title">USERS</h2>
           <div className="admin-table-wrap">
             <table className="admin-table">
-              <thead><tr><th>ID</th><th>Username</th><th>Email</th><th>Role</th><th>Verified</th><th>Joined</th><th>Actions</th></tr></thead>
+              <thead><tr><th></th><th>ID</th><th>Username</th><th>Email</th><th>Role</th><th>Verified</th><th>Joined</th><th>Actions</th></tr></thead>
               <tbody>
                 {users.map((u) => (
                   <tr key={u.id}>
+                    <td>
+                      {u.avatar
+                        ? <img src={u.avatar} alt={u.username} className="admin-user-avatar" />
+                        : <div className="admin-user-avatar admin-user-avatar-placeholder">{u.username[0].toUpperCase()}</div>}
+                    </td>
                     <td>{u.id}</td><td>{u.username}</td><td>{u.email}</td>
                     <td><span className={`role-badge role-${u.role}`}>{u.role}</span></td>
                     <td>{u.isVerified ? '✓' : '✗'}</td>

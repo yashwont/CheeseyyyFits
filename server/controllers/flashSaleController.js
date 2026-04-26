@@ -11,12 +11,12 @@ exports.getActive = async (req, res) => {
        FROM flash_sales fs
        JOIN products p ON fs.productId = p.id
        WHERE fs.active = 1
-         AND fs.startsAt <= datetime('now')
-         AND fs.endsAt > datetime('now')
+         AND datetime(fs.startsAt) <= datetime('now')
+         AND datetime(fs.endsAt) > datetime('now')
        ORDER BY fs.endsAt ASC`
     );
     res.json(sales);
-  } catch { res.status(500).json({ message: 'Failed to fetch flash sales' }); }
+  } catch (e) { console.error('getActive flash sales:', e); res.status(500).json({ message: 'Failed to fetch flash sales' }); }
 };
 
 exports.getAll = async (req, res) => {
@@ -24,10 +24,10 @@ exports.getAll = async (req, res) => {
     const sales = await all(
       `SELECT fs.*, p.name, p.image, p.price as originalPrice
        FROM flash_sales fs JOIN products p ON fs.productId = p.id
-       ORDER BY fs.createdAt DESC`
+       ORDER BY fs.id DESC`
     );
     res.json(sales);
-  } catch { res.status(500).json({ message: 'Failed to fetch flash sales' }); }
+  } catch (e) { console.error('getAll flash sales:', e); res.status(500).json({ message: 'Failed to fetch flash sales' }); }
 };
 
 exports.create = async (req, res) => {

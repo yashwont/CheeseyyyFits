@@ -30,7 +30,7 @@ exports.getRooms = async (req, res) => {
   try {
     const rooms = await all(
       `SELECT
-        u.id as userId, u.username, u.email,
+        u.id as userId, u.username, u.email, u.avatar,
         COUNT(CASE WHEN sm.isRead = 0 AND sm.senderRole = 'client' THEN 1 END) as unreadCount,
         MAX(sm.createdAt) as lastActivity,
         (SELECT message FROM support_messages WHERE roomUserId = u.id ORDER BY createdAt DESC LIMIT 1) as lastMessage

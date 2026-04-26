@@ -8,10 +8,16 @@ type Room = {
   userId: number;
   username: string;
   email: string;
+  avatar?: string;
   unreadCount: number;
   lastActivity: string;
   lastMessage: string;
 };
+
+const RoomAvatar = ({ room, size = 40 }: { room: Room; size?: number }) =>
+  room.avatar
+    ? <img src={room.avatar} alt={room.username} className="room-avatar room-avatar-img" style={{ width: size, height: size }} />
+    : <div className="room-avatar" style={{ width: size, height: size, fontSize: size * 0.35 }}>{room.username[0].toUpperCase()}</div>;
 
 const timeAgo = (date: string) => {
   const mins = Math.floor((Date.now() - new Date(date).getTime()) / 60000);
@@ -43,7 +49,7 @@ export default function SupportPanel() {
       const [r, u] = await Promise.all([fetchChatRooms(), fetchChatUnread()]);
       setRooms(r);
       setTotalUnread(u.unread);
-    } catch {}
+    } catch (e) { console.error('loadRooms failed:', e); }
   }, []);
 
   // Load on mount (so badge shows even before opening panel)
@@ -65,9 +71,14 @@ export default function SupportPanel() {
 
     // If this message belongs to the currently open room → append it directly
     if (currentRoom && latest.roomUserId === currentRoom.userId) {
-      setRoomMessages((prev) =>
-        prev.some((m) => m.id === latest.id) ? prev : [...prev, latest]
-      );
+      setRoomMessages((prev) => {
+        if (prev.some((m) => m.id === latest.id)) return prev;
+        // Replace optimistic duplicate (negative id, same text + role)
+        const clean = prev.filter(m =>
+          !(m.id < 0 && m.message === latest.message && m.senderRole === latest.senderRole)
+        );
+        return [...clean, latest];
+      });
       // Already reading this room — don't increment unread
     } else {
       // Different room → bump unread
@@ -111,13 +122,28 @@ export default function SupportPanel() {
         prev.map((r) => r.userId === room.userId ? { ...r, unreadCount: 0 } : r)
       );
       setTotalUnread((n) => Math.max(0, n - room.unreadCount));
-    } catch {}
+    } catch (e) { console.error('openRoom failed:', e); }
   };
 
   const sendReply = () => {
     if (!text.trim() || !activeRoom) return;
-    sendSupportMessage(activeRoom.userId, text.trim());
+    const msg = text.trim();
     setText('');
+
+    // Optimistic — show immediately without waiting for socket echo
+    const optimistic: ChatMessage = {
+      id: -Date.now(),
+      roomUserId: activeRoom.userId,
+      senderId: 0,
+      senderUsername: localStorage.getItem('username') || 'Support',
+      senderRole: (localStorage.getItem('role') as ChatMessage['senderRole']) || 'support',
+      message: msg,
+      isRead: true,
+      createdAt: new Date().toISOString(),
+    };
+    setRoomMessages(prev => [...prev, optimistic]);
+
+    sendSupportMessage(activeRoom.userId, msg);
   };
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -162,7 +188,7 @@ export default function SupportPanel() {
                     onClick={() => openRoom(room)}
                     whileHover={{ backgroundColor: 'rgba(255,0,0,0.04)' }}
                   >
-                    <div className="room-avatar">{room.username[0].toUpperCase()}</div>
+                    <RoomAvatar room={room} />
                     <div className="room-info">
                       <div className="room-info-top">
                         <span className="room-name">{room.username}</span>
@@ -192,9 +218,7 @@ export default function SupportPanel() {
                   <>
                     {/* Conversation header — clearly shows whose chat this is */}
                     <div className="support-chat-header">
-                      <div className="room-avatar" style={{ width: 32, height: 32, fontSize: '0.8rem', flexShrink: 0 }}>
-                        {activeRoom.username[0].toUpperCase()}
-                      </div>
+                      <RoomAvatar room={activeRoom} size={32} />
                       <div style={{ flex: 1 }}>
                         <p className="support-chat-customer-name">{activeRoom.username}</p>
                         <p className="support-chat-customer-email">{activeRoom.email}</p>

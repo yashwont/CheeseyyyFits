@@ -26,6 +26,7 @@ type SocketCtx = {
   watchUser: (userId: number) => void;
   unwatchUser: (userId: number) => void;
   clearNewClientMessages: () => void;
+  reconnect: () => void;
 };
 
 const Ctx = createContext<SocketCtx>({
@@ -38,6 +39,7 @@ const Ctx = createContext<SocketCtx>({
   watchUser: () => {},
   unwatchUser: () => {},
   clearNewClientMessages: () => {},
+  reconnect: () => {},
 });
 
 export function SocketProvider({ children }: { children: React.ReactNode }) {
@@ -48,10 +50,9 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   const [newClientMessages, setNewClientMessages] = useState<ChatMessage[]>([]);
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
     const socket = io('http://localhost:5000', {
       transports: ['websocket'],
-      auth: { token },
+      auth: (cb) => cb({ token: localStorage.getItem('token') }),
     });
     socketRef.current = socket;
 
@@ -108,12 +109,16 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
 
   const clearNewClientMessages = useCallback(() => setNewClientMessages([]), []);
 
+  const reconnect = useCallback(() => {
+    socketRef.current?.disconnect().connect();
+  }, []);
+
   return (
     <Ctx.Provider value={{
       connected, stockUpdates,
       myMessages, sendClientMessage,
       newClientMessages, sendSupportMessage,
-      watchUser, unwatchUser, clearNewClientMessages,
+      watchUser, unwatchUser, clearNewClientMessages, reconnect,
     }}>
       {children}
     </Ctx.Provider>

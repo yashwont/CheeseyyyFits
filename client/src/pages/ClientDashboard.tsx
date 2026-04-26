@@ -8,7 +8,7 @@ import {
   fetchWishlistIds, toggleWishlist, fetchWishlist,
   fetchReviews, submitReview, deleteMyReview,
   fetchRelated, fetchLoyalty, subscribeStockAlert,
-  createReturn, fetchMyReturns,
+  createReturn, fetchMyReturns, uploadAvatar,
 } from '../api';
 import { clearAuth } from '../utils/auth';
 import { useSocket } from '../context/SocketContext';
@@ -16,11 +16,23 @@ import { SkeletonGrid } from '../components/SkeletonCard';
 import OrderProgress from '../components/OrderProgress';
 import SizeGuideQuiz from '../components/SizeGuideQuiz';
 
-type Product = { id: number; name: string; description: string; price: number; image: string; category: string; size: string; stock: number; badge?: string; unitsSold?: number; avgRating?: number };
-type CartItem = { id: number; productId: number; name: string; price: number; quantity: number; size: string; image: string };
+const useCountdown = (end?: string) => {
+  const calc = () => end ? Math.max(0, new Date(end).getTime() - Date.now()) : 0;
+  const [ms, setMs] = useState(calc);
+  useEffect(() => {
+    if (!end) return;
+    const t = setInterval(() => setMs(calc()), 1000);
+    return () => clearInterval(t);
+  }, [end]);
+  const s = Math.floor(ms / 1000);
+  return { h: String(Math.floor(s / 3600)).padStart(2, '0'), m: String(Math.floor((s % 3600) / 60)).padStart(2, '0'), s: String(s % 60).padStart(2, '0'), expired: ms === 0 };
+};
+
+type Product = { id: number; name: string; description: string; price: number; image: string; category: string; size: string; stock: number; badge?: string; unitsSold?: number; avgRating?: number; salePrice?: number; saleEndsAt?: string };
+type CartItem = { id: number; productId: number; name: string; price: number; originalPrice: number; quantity: number; size: string; image: string };
 type Order = { id: number; total: number; discount: number; couponCode: string; status: string; createdAt: string; items: OrderItem[] };
 type OrderItem = { id: number; name: string; price: number; quantity: number; size: string };
-type Profile = { id: number; username: string; email: string; role: string; createdAt: string };
+type Profile = { id: number; username: string; email: string; role: string; avatar?: string; createdAt: string };
 type Loyalty = { points: number; tier: string; totalSpend: number; discount: number; dollarValue: number; nextTier: { name: string; minSpend: number; remaining: number } | null };
 type ReturnReq = { id: number; orderId: number; reason: string; status: string; createdAt: string };
 type Tab = 'shop' | 'wishlist' | 'orders' | 'returns' | 'profile';
@@ -62,6 +74,7 @@ export default function ClientDashboard() {
   const [returnOrderId, setReturnOrderId] = useState('');
   const [returnReason, setReturnReason] = useState('');
   const [returnDetails, setReturnDetails] = useState('');
+  const [returnLoading, setReturnLoading] = useState(false);
 
   // UI
   const [showSizeQuiz, setShowSizeQuiz] = useState(false);
@@ -90,6 +103,7 @@ export default function ClientDashboard() {
   const [currentPwd, setCurrentPwd] = useState('');
   const [newPwd, setNewPwd] = useState('');
   const [confirmPwd, setConfirmPwd] = useState('');
+  const [avatarUploading, setAvatarUploading] = useState(false);
 
   const username = localStorage.getItem('username') || 'User';
   const userId = parseInt(localStorage.getItem('userId') ?? '0');
@@ -229,12 +243,17 @@ export default function ClientDashboard() {
 
   const handleReturn = async () => {
     if (!returnOrderId || !returnReason) return toast.error('Select an order and reason');
+    setReturnLoading(true);
     try {
       await createReturn(parseInt(returnOrderId), returnReason, returnDetails);
       toast.success('Return request submitted');
       setReturnOrderId(''); setReturnReason(''); setReturnDetails('');
       fetchMyReturns().then(setMyReturns).catch(() => {});
-    } catch (err: any) { toast.error(err.response?.data?.message || 'Failed to submit'); }
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Failed to submit');
+    } finally {
+      setReturnLoading(false);
+    }
   };
 
   const handleUpdateProfile = async () => {
@@ -243,6 +262,18 @@ export default function ClientDashboard() {
       localStorage.setItem('username', editUsername);
       toast.success('Profile updated');
     } catch (err: any) { toast.error(err.response?.data?.message || 'Update failed'); }
+  };
+
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setAvatarUploading(true);
+    try {
+      const result = await uploadAvatar(file);
+      setProfile((prev) => prev ? { ...prev, avatar: result.avatar } : prev);
+      toast.success('Profile picture updated');
+    } catch { toast.error('Failed to upload picture'); }
+    finally { setAvatarUploading(false); }
   };
 
   const handleChangePassword = async () => {
@@ -271,10 +302,12 @@ export default function ClientDashboard() {
     const wishlisted = wishlistIds.includes(p.id);
     const liveStock = stockUpdates[p.id] ?? p.stock;
     const isBestSeller = (p.unitsSold ?? 0) >= 5;
-    const badge = isBestSeller ? 'Best Seller' : p.badge;
+    const onSale = !!p.salePrice && p.salePrice < p.price;
+    const badge = onSale ? null : (isBestSeller ? 'Best Seller' : p.badge);
+    const countdown = useCountdown(onSale ? p.saleEndsAt : undefined);
 
     return (
-      <motion.div className="product-card"
+      <motion.div className={`product-card${onSale ? ' product-card-sale' : ''}`}
         variants={{ hidden: { opacity: 0, y: 40, scale: 0.95 }, show: { opacity: 1, y: 0, scale: 1 } }}
         transition={{ type: 'spring', stiffness: 220, damping: 22 }}
         whileHover={{ y: -6, boxShadow: '0 12px 40px rgba(0,0,0,0.5)', borderColor: '#2a2a2a' }}>
@@ -282,7 +315,8 @@ export default function ClientDashboard() {
           {p.image ? <img src={p.image} alt={p.name} className="product-img" />
             : <div className="product-img-placeholder">NO IMAGE</div>}
           {liveStock === 0 && <span className="out-of-stock-badge">OUT OF STOCK</span>}
-          {liveStock > 0 && liveStock < 5 && <span className="low-stock-badge">Only {liveStock} left!</span>}
+          {liveStock > 0 && liveStock < 5 && !onSale && <span className="low-stock-badge">Only {liveStock} left!</span>}
+          {onSale && <span className="flash-card-badge">⚡ FLASH SALE</span>}
           {badge && liveStock > 0 && <span className={`product-badge badge-${badge.toLowerCase().replace(' ', '-')}`}>{badge}</span>}
           <motion.button className={`wishlist-btn ${wishlisted ? 'wishlisted' : ''}`}
             onClick={() => handleToggleWishlist(p.id, p.name)}
@@ -298,24 +332,37 @@ export default function ClientDashboard() {
           {p.avgRating !== undefined && p.avgRating > 0 && (
             <p className="product-rating">{'★'.repeat(Math.round(p.avgRating))}{'☆'.repeat(5 - Math.round(p.avgRating))} <span style={{ color: '#555', fontSize: '0.72rem' }}>({p.avgRating.toFixed(1)})</span></p>
           )}
+          {onSale && !countdown.expired && (
+            <div className="pc-countdown">
+              <span className="pc-countdown-label">ENDS IN</span>
+              <span className="pc-countdown-digits">{countdown.h}:{countdown.m}:{countdown.s}</span>
+            </div>
+          )}
           <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
             <button className="review-link" onClick={() => openReviews(p)}>Reviews</button>
             <button className="review-link" onClick={() => setShowSizeQuiz(true)}>Size Guide</button>
           </div>
           <div className="product-footer">
-            <span className="product-price">${p.price.toFixed(2)}</span>
+            {onSale ? (
+              <div className="product-price-wrap">
+                <span className="product-price-original">${p.price.toFixed(2)}</span>
+                <span className="product-price product-price-sale">${p.salePrice!.toFixed(2)}</span>
+              </div>
+            ) : (
+              <span className="product-price">${p.price.toFixed(2)}</span>
+            )}
             {liveStock === 0 ? (
               <motion.button className="add-cart-btn stock-alert-trigger"
                 onClick={() => setAlertProductId(p.id)}
                 whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.96 }}>
-                NOTIFY ME
+                <span>NOTIFY ME</span>
               </motion.button>
             ) : (
               <motion.button className="add-cart-btn"
                 onClick={() => handleAddToCart(p, p.size || undefined)}
                 whileHover={{ scale: 1.05, boxShadow: '0 0 14px rgba(255,0,0,0.4)' }}
                 whileTap={{ scale: 0.96 }}>
-                ADD TO CART
+                <span>ADD TO CART</span>
               </motion.button>
             )}
           </div>
@@ -447,7 +494,7 @@ export default function ClientDashboard() {
 
       {/* RETURNS TAB */}
       {tab === 'returns' && (
-        <div className="orders-tab">
+        <div className="orders-tab returns-tab">
           <h2 className="tab-title">RETURNS</h2>
           <div className="return-form">
             <h3 className="return-form-title">REQUEST A RETURN</h3>
@@ -468,13 +515,15 @@ export default function ClientDashboard() {
             <textarea className="review-textarea" placeholder="Additional details (optional)"
               value={returnDetails} onChange={(e) => setReturnDetails(e.target.value)} />
             <motion.button className="profile-save-btn" onClick={handleReturn}
-              whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}>
-              SUBMIT RETURN REQUEST
+              disabled={returnLoading}
+              whileHover={!returnLoading ? { scale: 1.02 } : {}}
+              whileTap={!returnLoading ? { scale: 0.97 } : {}}>
+              {returnLoading ? 'Submitting...' : 'SUBMIT RETURN REQUEST'}
             </motion.button>
           </div>
 
           {myReturns.length > 0 && (
-            <div style={{ marginTop: 32 }}>
+            <div style={{ marginTop: 32, maxWidth: 600, margin: '32px auto 0' }}>
               <h3 style={{ color: 'red', fontSize: '0.8rem', letterSpacing: 2, marginBottom: 16 }}>MY RETURN REQUESTS</h3>
               {myReturns.map((r) => (
                 <div key={r.id} className="order-card" style={{ marginBottom: 12 }}>
@@ -496,6 +545,20 @@ export default function ClientDashboard() {
       {tab === 'profile' && profile && (
         <div className="profile-tab">
           <h2 className="tab-title">MY PROFILE</h2>
+
+          {/* Avatar */}
+          <div className="avatar-wrap">
+            <label className="avatar-label" title="Change profile picture">
+              <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleAvatarChange} disabled={avatarUploading} />
+              {profile.avatar
+                ? <img src={profile.avatar} alt="avatar" className="avatar-img" />
+                : <div className="avatar-placeholder">{(profile.username?.[0] ?? 'U').toUpperCase()}</div>}
+              <div className="avatar-overlay">{avatarUploading ? '...' : 'CHANGE'}</div>
+            </label>
+            <p className="avatar-name">{profile.username}</p>
+            <p className="avatar-email">{profile.email}</p>
+          </div>
+
           <div className="profile-sections">
             <div className="profile-section">
               <h3>Account Info</h3>
@@ -556,7 +619,14 @@ export default function ClientDashboard() {
                         <div className="cart-item-info">
                           <p className="cart-item-name">{item.name}</p>
                           {item.size && <p className="cart-item-size">{item.size}</p>}
-                          <p className="cart-item-price">${item.price.toFixed(2)}</p>
+                          {item.originalPrice && item.originalPrice > item.price ? (
+                            <p className="cart-item-price">
+                              <span style={{ textDecoration: 'line-through', color: 'var(--t4)', fontSize: '0.75rem', marginRight: 4 }}>${item.originalPrice.toFixed(2)}</span>
+                              <span style={{ color: 'var(--red)' }}>${item.price.toFixed(2)}</span>
+                            </p>
+                          ) : (
+                            <p className="cart-item-price">${item.price.toFixed(2)}</p>
+                          )}
                         </div>
                         <div className="cart-item-qty">
                           <button onClick={() => item.quantity > 1 ? handleUpdateQty(item.id, item.quantity - 1) : handleRemoveItem(item.id)}>−</button>
@@ -595,7 +665,7 @@ export default function ClientDashboard() {
                     <div className="cart-total"><span>TOTAL</span><span>${cartTotal.toFixed(2)}</span></div>
                     <motion.button className="checkout-btn" onClick={() => { setCartOpen(false); navigate('/checkout'); }}
                       whileHover={{ scale: 1.02, boxShadow: '0 0 20px rgba(255,0,0,0.4)' }} whileTap={{ scale: 0.98 }}>
-                      CHECKOUT
+                      <span>CHECKOUT</span>
                     </motion.button>
                   </div>
                 </>

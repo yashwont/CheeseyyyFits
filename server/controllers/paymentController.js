@@ -163,7 +163,7 @@ exports.confirmOrder = async (req, res) => {
     const couponCode = paymentIntent.metadata.couponCode || null;
     const total = Math.max(subtotal - discount, 0);
 
-    const order = await orderModel.create(userId, total, discount, couponCode);
+    const order = await orderModel.create(userId, total, discount, couponCode, paymentIntentId);
 
     for (const item of items) {
       await orderModel.addItem(order.lastID, item.productId, item.name, item.price, item.quantity, item.size);

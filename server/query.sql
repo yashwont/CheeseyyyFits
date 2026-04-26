@@ -1,1 +1,1 @@
-delete from users where username = 'bips123';
+delete from flash_sales where 1=1;delete from flash_sales where 1=1;

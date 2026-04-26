@@ -76,6 +76,7 @@ const connectDB = () => {
 
         await runAsync(`ALTER TABLE orders ADD COLUMN discount REAL DEFAULT 0`).catch(() => {});
         await runAsync(`ALTER TABLE orders ADD COLUMN couponCode TEXT`).catch(() => {});
+        await runAsync(`ALTER TABLE orders ADD COLUMN stripePaymentIntentId TEXT`).catch(() => {});
 
         await runAsync(`CREATE TABLE IF NOT EXISTS order_items (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -131,8 +132,10 @@ const connectDB = () => {
           startsAt DATETIME NOT NULL,
           endsAt DATETIME NOT NULL,
           active BOOLEAN DEFAULT 1,
+          createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (productId) REFERENCES products(id) ON DELETE CASCADE
         )`);
+        await runAsync(`ALTER TABLE flash_sales ADD COLUMN createdAt DATETIME DEFAULT CURRENT_TIMESTAMP`).catch(() => {});
 
         await runAsync(`CREATE TABLE IF NOT EXISTS stock_alerts (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -165,6 +168,8 @@ const connectDB = () => {
           FOREIGN KEY (orderId) REFERENCES orders(id) ON DELETE CASCADE
         )`);
 
+        await runAsync(`ALTER TABLE returns ADD COLUMN stripeRefundId TEXT`).catch(() => {});
+
         // Drop old broadcast chat table, replace with room-based support messages
         await runAsync(`DROP TABLE IF EXISTS chat_messages`).catch(() => {});
 
@@ -182,6 +187,9 @@ const connectDB = () => {
 
         // Allow support role in users table
         await runAsync(`ALTER TABLE users ADD COLUMN isSupport BOOLEAN DEFAULT 0`).catch(() => {});
+
+        // Profile avatar
+        await runAsync(`ALTER TABLE users ADD COLUMN avatar TEXT`).catch(() => {});
 
         console.log('All tables ready.');
         resolve();

@@ -50,7 +50,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   const [newClientMessages, setNewClientMessages] = useState<ChatMessage[]>([]);
 
   useEffect(() => {
-    const socket = io('http://localhost:5000', {
+    const socket = io(import.meta.env.VITE_SERVER_URL || 'http://localhost:5000', {
       transports: ['websocket'],
       auth: (cb) => cb({ token: localStorage.getItem('token') }),
     });

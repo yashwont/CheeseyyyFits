@@ -77,6 +77,7 @@ const connectDB = () => {
         await runAsync(`ALTER TABLE orders ADD COLUMN discount REAL DEFAULT 0`).catch(() => {});
         await runAsync(`ALTER TABLE orders ADD COLUMN couponCode TEXT`).catch(() => {});
         await runAsync(`ALTER TABLE orders ADD COLUMN stripePaymentIntentId TEXT`).catch(() => {});
+        await runAsync(`CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_payment_intent ON orders(stripePaymentIntentId) WHERE stripePaymentIntentId IS NOT NULL`).catch(() => {});
 
         await runAsync(`CREATE TABLE IF NOT EXISTS order_items (
           id INTEGER PRIMARY KEY AUTOINCREMENT,

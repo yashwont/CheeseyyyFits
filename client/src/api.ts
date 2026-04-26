@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-export const API = axios.create({ baseURL: 'http://localhost:5000/api' });
+export const API = axios.create({ baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5000/api' });
 
 API.interceptors.request.use((config) => {
   const token = localStorage.getItem('token');
@@ -61,6 +61,12 @@ export const updateProfile = (data: object) =>
 
 export const changePassword = (data: object) =>
   API.patch('/profile/me/password', data).then((r) => r.data);
+
+export const uploadAvatar = (file: File) => {
+  const form = new FormData();
+  form.append('avatar', file);
+  return API.post('/profile/me/avatar', form, { headers: { 'Content-Type': 'multipart/form-data' } }).then((r) => r.data);
+};
 
 // Admin - users
 export const fetchAllUsers = () => API.get('/profile/users').then((r) => r.data);

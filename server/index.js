@@ -10,14 +10,21 @@ const { saveMessage } = require('./controllers/chatController');
 
 dotenv.config({ path: path.resolve(__dirname, '.env') });
 
+if (!process.env.JWT_SECRET) {
+  console.error('FATAL: JWT_SECRET environment variable is not set. Refusing to start.');
+  process.exit(1);
+}
+
+const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173';
+
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: '*' } });
+const io = new Server(server, { cors: { origin: CLIENT_URL, credentials: true } });
 
 app.locals.io = io;
 const port = process.env.PORT || 5000;
 
-app.use(cors());
+app.use(cors({ origin: CLIENT_URL, credentials: true }));
 app.post('/api/payment/webhook', express.raw({ type: 'application/json' }), require('./controllers/paymentController').webhook);
 app.use(express.json());
 

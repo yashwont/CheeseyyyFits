@@ -140,6 +140,12 @@ exports.confirmOrder = async (req, res) => {
     if (paymentIntent.metadata.userId !== String(userId))
       return res.status(403).json({ message: 'Unauthorized' });
 
+    // Idempotency guard — if this payment intent already has an order, return it
+    const existing = await new Promise((resolve, reject) =>
+      getDB().get('SELECT id, total FROM orders WHERE stripePaymentIntentId = ?', [paymentIntentId], (e, r) => e ? reject(e) : resolve(r || null))
+    );
+    if (existing) return res.status(200).json({ message: 'Order already placed', orderId: existing.id, total: existing.total });
+
     const items = await cartModel.getByUser(userId);
     if (!items.length) return res.status(400).json({ message: 'Cart already processed' });
 
@@ -163,32 +169,43 @@ exports.confirmOrder = async (req, res) => {
     const couponCode = paymentIntent.metadata.couponCode || null;
     const total = Math.max(subtotal - discount, 0);
 
-    const order = await orderModel.create(userId, total, discount, couponCode, paymentIntentId);
+    const dbRun = (sql, params = []) => new Promise((resolve, reject) =>
+      getDB().run(sql, params, function (e) { e ? reject(e) : resolve(this); })
+    );
 
-    for (const item of items) {
-      await orderModel.addItem(order.lastID, item.productId, item.name, item.price, item.quantity, item.size);
-      await decreaseStock(item.productId, item.quantity);
-      // Emit real-time stock update
-      const updatedStock = await new Promise((resolve) => {
-        getDB().get('SELECT stock FROM products WHERE id = ?', [item.productId], (_, row) => resolve(row?.stock ?? 0));
-      });
-      req.app.locals.io?.emit('stock_update', { productId: item.productId, stock: updatedStock });
+    // Atomic transaction — if anything fails mid-way, all DB changes are rolled back
+    await dbRun('BEGIN');
+    let orderId;
+    try {
+      const order = await orderModel.create(userId, total, discount, couponCode, paymentIntentId);
+      orderId = order.lastID;
+      for (const item of items) {
+        await orderModel.addItem(orderId, item.productId, item.name, item.price, item.quantity, item.size);
+        await decreaseStock(item.productId, item.quantity);
+      }
+      if (couponCode) await couponModel.incrementUse(couponCode);
+      await cartModel.clearCart(userId);
+      await dbRun('COMMIT');
+    } catch (e) {
+      await dbRun('ROLLBACK').catch(() => {});
+      throw e;
     }
 
-    if (couponCode) await couponModel.incrementUse(couponCode);
-    await cartModel.clearCart(userId);
-    // Award loyalty points (non-blocking)
+    // Post-commit side-effects (non-blocking, failures don't affect the order)
+    for (const item of items) {
+      getDB().get('SELECT stock FROM products WHERE id = ?', [item.productId], (_, row) => {
+        req.app.locals.io?.emit('stock_update', { productId: item.productId, stock: row?.stock ?? 0 });
+      });
+    }
     awardPoints(userId, total).catch((e) => console.error('Loyalty points error:', e.message));
-
-    // Send thank you email (non-blocking)
     getDB().get('SELECT username, email FROM users WHERE id = ?', [userId], (err, user) => {
       if (!err && user) {
-        sendThankYouEmail(user.email, user.username, order.lastID, items, total, discount)
+        sendThankYouEmail(user.email, user.username, orderId, items, total, discount)
           .catch((e) => console.error('Thank you email failed:', e.message));
       }
     });
 
-    res.status(201).json({ message: 'Order placed', orderId: order.lastID, total });
+    res.status(201).json({ message: 'Order placed', orderId, total });
   } catch (err) {
     console.error('Confirm order error:', err.message);
     res.status(500).json({ message: 'Failed to confirm order' });

@@ -58,3 +58,18 @@ exports.getSummary = async (req, res) => {
     res.status(500).json({ message: 'Failed to fetch analytics' });
   }
 };
+
+exports.getSearchAnalytics = async (req, res) => {
+  try {
+    const [topQueries, recentQueries, totalSearches] = await Promise.all([
+      all(`SELECT query, count, updatedAt FROM trending_searches
+           ORDER BY count DESC LIMIT 20`),
+      all(`SELECT query, count, updatedAt FROM trending_searches
+           ORDER BY updatedAt DESC LIMIT 10`),
+      get(`SELECT COUNT(*) as uniqueQueries, COALESCE(SUM(count), 0) as totalSearches FROM trending_searches`),
+    ]);
+    res.json({ topQueries, recentQueries, totalSearches });
+  } catch {
+    res.status(500).json({ message: 'Failed to fetch search analytics' });
+  }
+};

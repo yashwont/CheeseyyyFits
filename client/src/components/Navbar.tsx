@@ -121,8 +121,8 @@ function Navbar({ scrollTo }: { scrollTo: (id: string) => void }) {
           <motion.button
             className="theme-toggle"
             onClick={toggle}
-            whileHover={{ scale: 1.2, rotate: 20 }}
-            whileTap={{ scale: 0.85, rotate: -10 }}
+            whileHover={{ scale: 1.15, rotate: 18 }}
+            whileTap={{ scale: 0.88 }}
             transition={{ type: 'spring', stiffness: 400 }}
             title="Toggle theme"
             initial={{ opacity: 0 }}
@@ -133,21 +133,39 @@ function Navbar({ scrollTo }: { scrollTo: (id: string) => void }) {
 
           {authed ? (
             <>
-              <MagneticButton className="login-btn" onClick={() => navigate(role === 'admin' ? '/admin' : '/dashboard')} strength={0.25}>
+              <motion.button
+                className="login-btn"
+                onClick={() => navigate(role === 'admin' ? '/admin' : '/dashboard')}
+                whileHover={{ borderColor: 'var(--t1)', color: 'var(--t1)' }}
+                whileTap={{ scale: 0.96 }}
+              >
                 Dashboard
-              </MagneticButton>
-              <MagneticButton className="register-btn" onClick={handleLogout} strength={0.25}>
+              </motion.button>
+              <motion.button
+                className="register-btn"
+                onClick={handleLogout}
+                whileTap={{ scale: 0.96 }}
+              >
                 Logout
-              </MagneticButton>
+              </motion.button>
             </>
           ) : (
             <>
-              <MagneticButton className="login-btn" onClick={() => navigate('/login')} strength={0.25}>
+              <motion.button
+                className="login-btn"
+                onClick={() => navigate('/login')}
+                whileHover={{ borderColor: 'var(--t1)', color: 'var(--t1)' }}
+                whileTap={{ scale: 0.96 }}
+              >
                 Login
-              </MagneticButton>
-              <MagneticButton className="register-btn" onClick={() => navigate('/register')} strength={0.25}>
+              </motion.button>
+              <motion.button
+                className="register-btn"
+                onClick={() => navigate('/register')}
+                whileTap={{ scale: 0.96 }}
+              >
                 Register
-              </MagneticButton>
+              </motion.button>
             </>
           )}
 

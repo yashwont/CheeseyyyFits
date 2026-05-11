@@ -1,13 +1,31 @@
 const reviewModel = require('../models/reviewModel');
 const productModel = require('../models/productModel');
+const { getDB } = require('../config/db');
+
+const all = (sql, params = []) =>
+  new Promise((resolve, reject) => {
+    getDB().all(sql, params, (err, rows) => { if (err) reject(err); else resolve(rows); });
+  });
 
 exports.getReviews = async (req, res) => {
   try {
+    const { productId } = req.params;
     const [reviews, summary] = await Promise.all([
-      reviewModel.getByProduct(req.params.productId),
-      reviewModel.getSummary(req.params.productId),
+      reviewModel.getByProduct(productId),
+      reviewModel.getSummary(productId),
     ]);
-    res.json({ reviews, avgRating: Math.round(summary.avgRating * 10) / 10, total: summary.total });
+
+    // Cross-check userIds against order_items for verified-buyer flag
+    const buyerRows = await all(
+      `SELECT DISTINCT o.userId
+       FROM orders o JOIN order_items oi ON oi.orderId = o.id
+       WHERE oi.productId = ? AND o.status != 'cancelled'`,
+      [productId]
+    );
+    const buyerIds = new Set(buyerRows.map((r) => r.userId));
+    const enriched = reviews.map((r) => ({ ...r, isVerifiedBuyer: buyerIds.has(r.userId) }));
+
+    res.json({ reviews: enriched, avgRating: Math.round(summary.avgRating * 10) / 10, total: summary.total });
   } catch { res.status(500).json({ message: 'Failed to fetch reviews' }); }
 };
 

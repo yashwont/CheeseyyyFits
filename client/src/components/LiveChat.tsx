@@ -29,11 +29,19 @@ export default function LiveChat() {
   useEffect(() => {
     if (!myMessages.length) return;
     setMessages((prev) => {
-      const ids = new Set(prev.map((m) => m.id));
+      const ids = new Set(prev.filter(m => m.id > 0).map((m) => m.id));
       const fresh = myMessages.filter((m) => !ids.has(m.id));
       if (!fresh.length) return prev;
       if (!open) setHasUnread(true);
-      return [...prev, ...fresh];
+      // Replace any optimistic duplicates then append real messages
+      let updated = prev;
+      for (const msg of fresh) {
+        updated = updated.filter(m =>
+          !(m.id < 0 && m.message === msg.message && m.senderRole === msg.senderRole)
+        );
+        updated = [...updated, msg];
+      }
+      return updated;
     });
   }, [myMessages, open]);
 
@@ -53,8 +61,23 @@ export default function LiveChat() {
   // ── Render ─────────────────────────────────────────────────────────────────
   const send = () => {
     if (!text.trim()) return;
-    sendClientMessage(text.trim());
+    const msg = text.trim();
     setText('');
+
+    // Optimistic — show immediately without waiting for socket echo
+    const optimistic: ChatMessage = {
+      id: -Date.now(),
+      roomUserId: 0,
+      senderId: 0,
+      senderUsername: getUsername(),
+      senderRole: 'client',
+      message: msg,
+      isRead: true,
+      createdAt: new Date().toISOString(),
+    };
+    setMessages(prev => [...prev, optimistic]);
+
+    sendClientMessage(msg);
   };
 
   const username = getUsername();

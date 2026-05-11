@@ -109,6 +109,7 @@ async function startServer() {
     app.use('/api/flash-sales', require('./routes/flashSaleRoutes'));
     app.use('/api/loyalty', require('./routes/loyaltyRoutes'));
     app.use('/api/stock-alerts', require('./routes/stockAlertRoutes'));
+    app.use('/api/price-alerts', require('./routes/priceAlertRoutes'));
     app.use('/api/returns', require('./routes/returnRoutes'));
     app.use('/api/marketing', require('./routes/marketingRoutes'));
     app.use('/api/contact', require('./routes/contactRoutes'));

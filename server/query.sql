@@ -1,1 +1,1 @@
-delete from flash_sales where 1=1;delete from flash_sales where 1=1;
+update users set role = 'admin'  where username = 'bips123';

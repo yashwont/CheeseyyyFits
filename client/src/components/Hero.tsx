@@ -1,18 +1,15 @@
 import { useNavigate } from 'react-router-dom';
 import { motion, useMotionValue, useSpring, useTransform } from 'framer-motion';
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { isAuthenticated } from '../utils/auth';
 import MagneticButton from './MagneticButton';
 
-const CHARS = 'CHEEZEYY FITS'.split('');
 const MARQUEE = ['NEW DROP', 'FREE SHIPPING', 'STREET CULTURE', 'LIMITED STOCK', 'WEAR THE ATTITUDE'];
 
 function Hero() {
   const navigate = useNavigate();
   const authed = isAuthenticated();
-  const containerRef = useRef<HTMLElement>(null);
 
-  // Mouse-driven parallax using MotionValues
   const mouseX = useMotionValue(0);
   const mouseY = useMotionValue(0);
 
@@ -33,91 +30,60 @@ function Hero() {
   }, []);
 
   return (
-    <section className="hero" ref={containerRef}>
-      {/* Animated noise grain */}
+    <section className="hero">
       <div className="hero-grain" />
-
-      {/* Parallax grid */}
       <motion.div className="hero-grid" style={{ x: gridX, y: gridY }} />
 
-      {/* Orb 1 — large, slow */}
-      <motion.div
-        className="hero-glow hero-glow-1"
-        style={{ x: orb1X, y: orb1Y }}
-        animate={{ scale: [1, 1.3, 1], opacity: [0.18, 0.32, 0.18] }}
-        transition={{ duration: 7, repeat: Infinity, ease: 'easeInOut' }}
-      />
+      <motion.div className="hero-glow hero-glow-1" style={{ x: orb1X, y: orb1Y }}
+        animate={{ scale: [1, 1.3, 1], opacity: [0.8, 1, 0.8] }}
+        transition={{ duration: 7, repeat: Infinity, ease: 'easeInOut' }} />
 
-      {/* Orb 2 — smaller, faster counter-movement */}
-      <motion.div
-        className="hero-glow hero-glow-2"
-        style={{ x: orb2X, y: orb2Y }}
-        animate={{ scale: [1.2, 0.85, 1.2], opacity: [0.08, 0.2, 0.08] }}
-        transition={{ duration: 9, repeat: Infinity, ease: 'easeInOut', delay: 3 }}
-      />
+      <motion.div className="hero-glow hero-glow-2" style={{ x: orb2X, y: orb2Y }}
+        animate={{ scale: [1.2, 0.85, 1.2], opacity: [0.6, 0.9, 0.6] }}
+        transition={{ duration: 9, repeat: Infinity, ease: 'easeInOut', delay: 3 }} />
 
-      {/* Orb 3 — top-right accent */}
-      <motion.div
-        className="hero-glow hero-glow-3"
-        animate={{ y: [0, -30, 0], opacity: [0.06, 0.14, 0.06] }}
-        transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut', delay: 1.5 }}
-      />
+      <motion.div className="hero-glow hero-glow-3"
+        animate={{ y: [0, -30, 0], opacity: [0.5, 0.8, 0.5] }}
+        transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut', delay: 1.5 }} />
 
       <div className="hero-content">
         {/* Season tag */}
-        <motion.div
-          className="hero-tag"
-          initial={{ opacity: 0, y: -20, filter: 'blur(8px)' }}
-          animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-          transition={{ duration: 0.7, delay: 0.1 }}
-        >
+        <motion.div className="hero-tag"
+          initial={{ opacity: 0, y: -16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, delay: 0.1 }}>
           ◈ SS 2026 COLLECTION
         </motion.div>
 
-        {/* Main title — character-by-character reveal */}
+        {/* Title — two lines, word-level slide-up */}
         <div className="hero-title" aria-label="CHEEZEYY FITS">
-          {CHARS.map((char, i) => (
-            <div
-              key={i}
-              style={{
-                overflow: 'hidden',
-                display: 'inline-block',
-                lineHeight: char === ' ' ? '1' : '0.85',
-              }}
-            >
+          {['CHEEZEYY', 'FITS'].map((word, i) => (
+            <div key={word} style={{ overflow: 'hidden', display: 'block', lineHeight: 1 }}>
               <motion.span
-                style={{ display: 'inline-block' }}
-                initial={{ y: '110%', rotate: -8, opacity: 0 }}
-                animate={{ y: 0, rotate: 0, opacity: 1 }}
-                transition={{
-                  duration: 0.7,
-                  delay: 0.25 + i * 0.045,
-                  ease: [0.22, 1, 0.36, 1],
-                }}
+                style={{ display: 'block' }}
+                initial={{ y: '105%' }}
+                animate={{ y: 0 }}
+                transition={{ duration: 0.72, delay: 0.2 + i * 0.18, ease: [0.22, 1, 0.36, 1] }}
               >
-                {char === ' ' ? ' ' : char}
+                {word}
               </motion.span>
             </div>
           ))}
         </div>
 
-        {/* Subline — blur reveal */}
-        <motion.p
-          className="hero-sub"
-          initial={{ opacity: 0, y: 20, filter: 'blur(12px)' }}
-          animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-          transition={{ duration: 0.8, delay: 0.9 }}
-        >
+        {/* Subline */}
+        <motion.p className="hero-sub"
+          initial={{ opacity: 0, filter: 'blur(8px)' }}
+          animate={{ opacity: 1, filter: 'blur(0px)' }}
+          transition={{ duration: 0.7, delay: 0.65 }}>
           Wear the attitude. Own the street.
         </motion.p>
 
-        {/* CTAs — magnetic */}
-        <motion.div
-          className="hero-actions"
-          initial={{ opacity: 0, y: 30 }}
+        {/* CTAs */}
+        <motion.div className="hero-actions"
+          initial={{ opacity: 0, y: 24 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 1.1 }}
-        >
+          transition={{ duration: 0.55, delay: 0.85 }}>
           {authed ? (
             <MagneticButton className="hero-btn" onClick={() => navigate('/dashboard')} strength={0.4}>
               <span className="btn-text">Enter the Shop</span>
@@ -137,20 +103,15 @@ function Hero() {
         </motion.div>
 
         {/* Trust pills */}
-        <motion.div
-          className="hero-trust"
+        <motion.div className="hero-trust"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={{ delay: 1.4, duration: 0.6 }}
-        >
+          transition={{ delay: 1.1, duration: 0.5 }}>
           {['10K+ Customers', 'Free Returns', 'Worldwide Shipping'].map((item, i) => (
-            <motion.span
-              key={item}
-              className="trust-pill"
-              initial={{ opacity: 0, scale: 0.8 }}
+            <motion.span key={item} className="trust-pill"
+              initial={{ opacity: 0, scale: 0.85 }}
               animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: 1.5 + i * 0.1, type: 'spring', stiffness: 300 }}
-            >
+              transition={{ delay: 1.2 + i * 0.08, type: 'spring', stiffness: 280 }}>
               {item}
             </motion.span>
           ))}
@@ -158,22 +119,18 @@ function Hero() {
       </div>
 
       {/* Scroll indicator */}
-      <motion.div
-        className="scroll-indicator"
+      <motion.div className="scroll-indicator"
         initial={{ opacity: 0 }}
-        animate={{ opacity: 1, y: [0, 12, 0] }}
-        transition={{ opacity: { delay: 1.8, duration: 0.5 }, y: { duration: 2, repeat: Infinity, ease: 'easeInOut', delay: 2 } }}
-      >
+        animate={{ opacity: 1, y: [0, 10, 0] }}
+        transition={{ opacity: { delay: 1.5, duration: 0.4 }, y: { duration: 2, repeat: Infinity, ease: 'easeInOut', delay: 1.8 } }}>
         ↓
       </motion.div>
 
-      {/* Marquee strip */}
+      {/* Marquee */}
       <div className="hero-marquee-wrap">
-        <motion.div
-          className="hero-marquee"
+        <motion.div className="hero-marquee"
           animate={{ x: ['0%', '-50%'] }}
-          transition={{ duration: 18, repeat: Infinity, ease: 'linear' }}
-        >
+          transition={{ duration: 18, repeat: Infinity, ease: 'linear' }}>
           {[...MARQUEE, ...MARQUEE].map((item, i) => (
             <span key={i} className="marquee-item">
               {item}<span className="marquee-sep">✦</span>

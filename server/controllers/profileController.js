@@ -4,7 +4,7 @@ const userModel = require('../models/userModel');
 
 const getUser = (id) =>
   new Promise((resolve, reject) => {
-    getDB().get('SELECT id, username, email, role, isVerified, createdAt FROM users WHERE id = ?', [id], (err, row) => {
+    getDB().get('SELECT id, username, email, role, isVerified, avatar, createdAt FROM users WHERE id = ?', [id], (err, row) => {
       if (err) reject(err);
       else resolve(row || null);
     });
@@ -12,7 +12,7 @@ const getUser = (id) =>
 
 const getAllUsers = () =>
   new Promise((resolve, reject) => {
-    getDB().all('SELECT id, username, email, role, isVerified, createdAt FROM users ORDER BY createdAt DESC', [], (err, rows) => {
+    getDB().all('SELECT id, username, email, role, isVerified, avatar, createdAt FROM users ORDER BY createdAt DESC', [], (err, rows) => {
       if (err) reject(err);
       else resolve(rows);
     });
@@ -47,6 +47,17 @@ exports.updateProfile = async (req, res) => {
       return res.status(409).json({ message: 'Username already taken' });
     }
     res.status(500).json({ message: 'Failed to update profile' });
+  }
+};
+
+exports.uploadAvatar = async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
+    const avatarUrl = req.file.path;
+    await run('UPDATE users SET avatar = ? WHERE id = ?', [avatarUrl, req.user.userId]);
+    res.json({ avatar: avatarUrl });
+  } catch {
+    res.status(500).json({ message: 'Failed to upload avatar' });
   }
 };
 

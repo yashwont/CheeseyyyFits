@@ -25,15 +25,26 @@ const get = (sql, params = []) =>
   });
 
 const cartModel = {
-  getByUser: (userId) =>
+  getByUser: (userId, savedForLater = 0) =>
     all(
-      `SELECT ci.id, ci.quantity, ci.size,
-              p.id as productId, p.name, p.price, p.image, p.category, p.stock
+      `SELECT ci.id, ci.quantity, ci.size, ci.savedForLater,
+              p.id as productId, p.name, p.image, p.category, p.stock,
+              p.price as originalPrice,
+              COALESCE(fs.salePrice, p.price) as price
        FROM cart_items ci
        JOIN products p ON ci.productId = p.id
-       WHERE ci.userId = ?`,
-      [userId]
+       LEFT JOIN (
+         SELECT productId, MIN(salePrice) as salePrice
+         FROM flash_sales
+         WHERE active = 1 AND datetime(startsAt) <= datetime('now') AND datetime(endsAt) > datetime('now')
+         GROUP BY productId
+       ) fs ON fs.productId = p.id
+       WHERE ci.userId = ? AND ci.savedForLater = ?`,
+      [userId, savedForLater]
     ),
+
+  toggleSavedForLater: (id, userId, savedForLater) =>
+    run('UPDATE cart_items SET savedForLater = ? WHERE id = ? AND userId = ?', [savedForLater ? 1 : 0, id, userId]),
 
   addItem: (userId, productId, quantity, size) =>
     run(

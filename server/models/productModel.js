@@ -26,14 +26,15 @@ const get = (sql, params = []) =>
 
 const productModel = {
   create: (data) => {
-    const { name, description, price, image, category, size, stock } = data;
+    const { name, description, price, image, category, size, stock, model3dUrl, images } = data;
     return run(
-      'INSERT INTO products (name, description, price, image, category, size, stock) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [name, description, price, image, category, size, stock ?? 0]
+      'INSERT INTO products (name, description, price, image, category, size, stock, model3dUrl, images) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [name, description, price, image, category, size, stock ?? 0, model3dUrl ?? null, images ?? null]
     );
   },
 
   findAll: ({ search, category, minPrice, maxPrice, size } = {}) => {
+    // ... (logic remains same, just ensuring p.* is selected which includes images)
     const conditions = [];
     const params = [];
 
@@ -51,7 +52,7 @@ const productModel = {
     if (size) { conditions.push('size LIKE ?'); params.push(`%${size}%`); }
 
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-    // Attach badge logic and best seller rank
+    // Attach badge logic, best seller rank, reviews, and active flash sale price
     return all(
       `SELECT p.*,
         CASE
@@ -61,7 +62,9 @@ const productModel = {
         END as badge,
         COALESCE(bs.unitsSold, 0) as unitsSold,
         COALESCE(r.avgRating, 0) as avgRating,
-        COALESCE(r.reviewCount, 0) as reviewCount
+        COALESCE(r.reviewCount, 0) as reviewCount,
+        fs.salePrice,
+        fs.saleEndsAt
        FROM products p
        LEFT JOIN (
          SELECT productId, SUM(quantity) as unitsSold
@@ -73,6 +76,12 @@ const productModel = {
          SELECT productId, AVG(rating) as avgRating, COUNT(*) as reviewCount
          FROM reviews GROUP BY productId
        ) r ON r.productId = p.id
+       LEFT JOIN (
+         SELECT productId, MIN(salePrice) as salePrice, MIN(endsAt) as saleEndsAt
+         FROM flash_sales
+         WHERE active = 1 AND datetime(startsAt) <= datetime('now') AND datetime(endsAt) > datetime('now')
+         GROUP BY productId
+       ) fs ON fs.productId = p.id
        ${where}
        ORDER BY p.createdAt DESC`,
       params
@@ -82,10 +91,10 @@ const productModel = {
   findById: (id) => get('SELECT * FROM products WHERE id = ?', [id]),
 
   update: (id, data) => {
-    const { name, description, price, image, category, size, stock } = data;
+    const { name, description, price, image, category, size, stock, model3dUrl, images } = data;
     return run(
-      'UPDATE products SET name=?, description=?, price=?, image=?, category=?, size=?, stock=? WHERE id=?',
-      [name, description, price, image, category, size, stock, id]
+      'UPDATE products SET name=?, description=?, price=?, image=?, category=?, size=?, stock=?, model3dUrl=?, images=? WHERE id=?',
+      [name, description, price, image, category, size, stock, model3dUrl ?? null, images ?? null, id]
     );
   },
 

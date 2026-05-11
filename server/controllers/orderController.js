@@ -9,16 +9,24 @@ const all = (sql, params = []) =>
 
 exports.checkout = async (req, res) => {
   try {
+    const { paymentMethod } = req.body;
+    if (paymentMethod !== 'cod') {
+      return res.status(400).json({
+        message: 'This endpoint only accepts Cash on Delivery orders (paymentMethod: "cod"). Use /api/payment for card payments.',
+      });
+    }
+
     const userId = req.user.userId;
     const items = await cartModel.getByUser(userId);
     if (!items.length) return res.status(400).json({ message: 'Cart is empty' });
+
     const total = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
-    const order = await orderModel.create(userId, total);
+    const order = await orderModel.create(userId, total, 0, null, null, 'pending_verification', 'cod');
     for (const item of items) {
       await orderModel.addItem(order.lastID, item.productId, item.name, item.price, item.quantity, item.size);
     }
     await cartModel.clearCart(userId);
-    res.status(201).json({ message: 'Order placed', orderId: order.lastID, total });
+    res.status(201).json({ message: 'COD order placed — pending admin verification', orderId: order.lastID, total });
   } catch { res.status(500).json({ message: 'Checkout failed' }); }
 };
 

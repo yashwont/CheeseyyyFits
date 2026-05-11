@@ -9,12 +9,19 @@ import {
   fetchReviews, submitReview, deleteMyReview,
   fetchRelated, fetchLoyalty, subscribeStockAlert,
   createReturn, fetchMyReturns, uploadAvatar,
+  fetchSavedItems, toggleSavedItem, subscribePriceAlert,
 } from '../api';
 import { clearAuth } from '../utils/auth';
 import { useSocket } from '../context/SocketContext';
 import { SkeletonGrid } from '../components/SkeletonCard';
 import OrderProgress from '../components/OrderProgress';
 import SizeGuideQuiz from '../components/SizeGuideQuiz';
+import SearchAutocomplete from '../components/SearchAutocomplete';
+import Product360Viewer from '../components/Product360Viewer';
+import RecentlyViewed from '../components/RecentlyViewed';
+import RestockedWidget from '../components/RestockedWidget';
+import FreeShippingProgress from '../components/FreeShippingProgress';
+import { useRecentlyViewed } from '../hooks/useRecentlyViewed';
 
 const useCountdown = (end?: string) => {
   const calc = () => end ? Math.max(0, new Date(end).getTime() - Date.now()) : 0;
@@ -28,7 +35,7 @@ const useCountdown = (end?: string) => {
   return { h: String(Math.floor(s / 3600)).padStart(2, '0'), m: String(Math.floor((s % 3600) / 60)).padStart(2, '0'), s: String(s % 60).padStart(2, '0'), expired: ms === 0 };
 };
 
-type Product = { id: number; name: string; description: string; price: number; image: string; category: string; size: string; stock: number; badge?: string; unitsSold?: number; avgRating?: number; salePrice?: number; saleEndsAt?: string };
+type Product = { id: number; name: string; description: string; price: number; image: string; category: string; size: string; stock: number; badge?: string; unitsSold?: number; avgRating?: number; salePrice?: number; saleEndsAt?: string; model3dUrl?: string; images?: string[] | string };
 type CartItem = { id: number; productId: number; name: string; price: number; originalPrice: number; quantity: number; size: string; image: string };
 type Order = { id: number; total: number; discount: number; couponCode: string; status: string; createdAt: string; items: OrderItem[] };
 type OrderItem = { id: number; name: string; price: number; quantity: number; size: string };
@@ -36,7 +43,7 @@ type Profile = { id: number; username: string; email: string; role: string; avat
 type Loyalty = { points: number; tier: string; totalSpend: number; discount: number; dollarValue: number; nextTier: { name: string; minSpend: number; remaining: number } | null };
 type ReturnReq = { id: number; orderId: number; reason: string; status: string; createdAt: string };
 type Tab = 'shop' | 'wishlist' | 'orders' | 'returns' | 'profile';
-type Review = { id: number; userId: number; username: string; rating: number; comment: string; createdAt: string };
+type Review = { id: number; userId: number; username: string; rating: number; comment: string; createdAt: string; isVerifiedBuyer?: boolean };
 
 const CATEGORIES = ['All', 'T-Shirts', 'Hoodies', 'Accessories', 'Pants', 'Shoes'];
 const SIZES = ['All', 'XS', 'S', 'M', 'L', 'XL', 'XXL', 'One Size'];
@@ -81,6 +88,19 @@ export default function ClientDashboard() {
   const [alertEmail, setAlertEmail] = useState('');
   const [alertProductId, setAlertProductId] = useState<number | null>(null);
   const [showWelcomeBanner, setShowWelcomeBanner] = useState(false);
+  const [viewing3D, setViewing3D] = useState<Product | null>(null);
+  const [viewing360, setViewing360] = useState<Product | null>(null);
+
+  // Saved-for-later
+  const [savedItems, setSavedItems] = useState<CartItem[]>([]);
+
+  // Price drop alert modal
+  const [priceAlertProduct, setPriceAlertProduct] = useState<Product | null>(null);
+  const [priceAlertEmail, setPriceAlertEmail] = useState('');
+  const [priceAlertThreshold, setPriceAlertThreshold] = useState('');
+
+  // Recently viewed
+  const { track: trackRecent } = useRecentlyViewed();
 
   // Real-time stock from socket
   const { stockUpdates } = useSocket();
@@ -110,11 +130,12 @@ export default function ClientDashboard() {
 
   const logout = () => { clearAuth(); navigate('/'); };
 
-  const loadProducts = useCallback(async () => {
+  const loadProducts = useCallback(async (overrideSearch?: string) => {
     setLoadingProducts(true);
     try {
       const params: Record<string, string> = {};
-      if (search) params.search = search;
+      const term = overrideSearch !== undefined ? overrideSearch : search;
+      if (term) params.search = term;
       if (category !== 'All') params.category = category;
       if (size !== 'All') params.size = size;
       if (minPrice) params.minPrice = minPrice;
@@ -125,8 +146,31 @@ export default function ClientDashboard() {
   }, [search, category, size, minPrice, maxPrice]);
 
   const loadCart = useCallback(async () => {
-    try { setCart(await fetchCart()); } catch {}
+    try {
+      const [cartItems, saved] = await Promise.all([fetchCart(), fetchSavedItems().catch(() => [])]);
+      setCart(cartItems);
+      setSavedItems(saved);
+    } catch {}
   }, []);
+
+  const handleToggleSaved = async (id: number) => {
+    try {
+      const result = await toggleSavedItem(id);
+      await loadCart();
+      toast.success(result.message);
+    } catch { toast.error('Failed to update'); }
+  };
+
+  const handlePriceAlert = async () => {
+    if (!priceAlertProduct || !priceAlertEmail || !priceAlertThreshold) return;
+    const threshold = parseFloat(priceAlertThreshold);
+    if (isNaN(threshold) || threshold <= 0) return toast.error('Enter a valid price');
+    try {
+      const result = await subscribePriceAlert(priceAlertEmail, priceAlertProduct.id, threshold);
+      toast.success(result.message);
+      setPriceAlertProduct(null); setPriceAlertEmail(''); setPriceAlertThreshold('');
+    } catch { toast.error('Failed to subscribe'); }
+  };
 
   const loadWishlistIds = useCallback(async () => {
     try { setWishlistIds(await fetchWishlistIds()); } catch {}
@@ -181,6 +225,7 @@ export default function ClientDashboard() {
   const openReviews = async (product: Product) => {
     setReviewProduct(product);
     setReviewsLoading(true);
+    trackRecent({ id: product.id, name: product.name, image: product.image, price: product.price, category: product.category });
     try {
       const data = await fetchReviews(product.id);
       setReviews(data.reviews);
@@ -338,9 +383,21 @@ export default function ClientDashboard() {
               <span className="pc-countdown-digits">{countdown.h}:{countdown.m}:{countdown.s}</span>
             </div>
           )}
-          <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
             <button className="review-link" onClick={() => openReviews(p)}>Reviews</button>
             <button className="review-link" onClick={() => setShowSizeQuiz(true)}>Size Guide</button>
+            {p.model3dUrl && (
+              <button className="review-link review-link-3d" onClick={() => setViewing3D(p)}>3D VIEW</button>
+            )}
+            {p.images && (
+              <button className="review-link review-link-tryon" onClick={() => setViewing360(p)}>360° VIEW</button>
+            )}
+            <button
+              className="review-link review-link-alert"
+              onClick={() => { setPriceAlertProduct(p); setPriceAlertThreshold((p.salePrice ?? p.price).toFixed(2)); }}
+            >
+              PRICE ALERT
+            </button>
           </div>
           <div className="product-footer">
             {onSale ? (
@@ -410,9 +467,17 @@ export default function ClientDashboard() {
       {/* SHOP TAB */}
       {tab === 'shop' && (
         <div className="shop-tab">
+          <RestockedWidget onItemClick={(id) => {
+            const p = products.find((x) => x.id === id);
+            if (p) openReviews(p);
+          }} />
+
           <div className="shop-filters">
-            <input className="search-input" placeholder="Search products..." value={search}
-              onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && loadProducts()} />
+            <SearchAutocomplete
+              value={search}
+              onChange={(v) => setSearch(v)}
+              onSearch={(v) => { setSearch(v); loadProducts(v); }}
+            />
             <div className="filter-row">
               <select className="filter-select" value={category} onChange={(e) => setCategory(e.target.value)}>
                 {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
@@ -423,7 +488,7 @@ export default function ClientDashboard() {
               <input className="price-input" placeholder="Min $" value={minPrice} onChange={(e) => setMinPrice(e.target.value)} />
               <input className="price-input" placeholder="Max $" value={maxPrice} onChange={(e) => setMaxPrice(e.target.value)} />
               <button className="filter-btn" onClick={loadProducts}>FILTER</button>
-              <button className="filter-clear" onClick={() => { setSearch(''); setCategory('All'); setSize('All'); setMinPrice(''); setMaxPrice(''); }}>CLEAR</button>
+              <button className="filter-clear" onClick={() => { setSearch(''); setCategory('All'); setSize('All'); setMinPrice(''); setMaxPrice(''); loadProducts(''); }}>CLEAR</button>
             </div>
           </div>
           {loadingProducts ? <SkeletonGrid count={8} />
@@ -434,6 +499,11 @@ export default function ClientDashboard() {
                 {products.map((p) => <ProductCard key={p.id} p={p} />)}
               </motion.div>
             )}
+
+          <RecentlyViewed onItemClick={(id) => {
+            const p = products.find((x) => x.id === id);
+            if (p) openReviews(p);
+          }} />
         </div>
       )}
 
@@ -610,8 +680,9 @@ export default function ClientDashboard() {
                 <h3>YOUR CART</h3>
                 <button className="cart-close" onClick={() => setCartOpen(false)}>✕</button>
               </div>
-              {cart.length === 0 ? <p className="cart-empty">Your cart is empty.</p> : (
+              {cart.length === 0 && savedItems.length === 0 ? <p className="cart-empty">Your cart is empty.</p> : (
                 <>
+                  {cart.length > 0 && <FreeShippingProgress cartTotal={cartTotal} />}
                   <div className="cart-items">
                     {cart.map((item) => (
                       <div key={item.id} className="cart-item">
@@ -637,10 +708,30 @@ export default function ClientDashboard() {
                             title={item.quantity >= (stockUpdates[item.productId] ?? item.stock ?? 99) ? 'Max stock reached' : ''}
                           >+</button>
                         </div>
-                        <button className="cart-remove" onClick={() => handleRemoveItem(item.id)}>✕</button>
+                        <div className="cart-item-actions">
+                          <button className="cart-save-btn" onClick={() => handleToggleSaved(item.id)} title="Save for later">♡</button>
+                          <button className="cart-remove" onClick={() => handleRemoveItem(item.id)}>✕</button>
+                        </div>
                       </div>
                     ))}
                   </div>
+
+                  {savedItems.length > 0 && (
+                    <div className="saved-for-later">
+                      <p className="saved-title">SAVED FOR LATER ({savedItems.length})</p>
+                      {savedItems.map((item) => (
+                        <div key={item.id} className="saved-item">
+                          {item.image && <img src={item.image} alt={item.name} className="saved-img" />}
+                          <div className="saved-info">
+                            <p className="saved-name">{item.name}</p>
+                            {item.size && <p className="saved-size">{item.size}</p>}
+                            <p className="saved-price">${item.price.toFixed(2)}</p>
+                          </div>
+                          <button className="saved-move" onClick={() => handleToggleSaved(item.id)}>MOVE TO CART</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   {relatedProducts.length > 0 && (
                     <div className="cart-related">
                       <p className="cart-related-title">FREQUENTLY BOUGHT TOGETHER</p>
@@ -677,6 +768,87 @@ export default function ClientDashboard() {
 
       {/* SIZE GUIDE QUIZ */}
       {showSizeQuiz && <SizeGuideQuiz onClose={() => setShowSizeQuiz(false)} />}
+
+      {/* 3D MODEL VIEWER */}
+      <AnimatePresence>
+        {viewing3D && (
+          <motion.div className="cart-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            onClick={() => setViewing3D(null)}>
+            <motion.div className="viewer3d-modal"
+              initial={{ opacity: 0, scale: 0.93, y: 24 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.93, y: 24 }}
+              transition={{ type: 'spring', stiffness: 260, damping: 26 }}
+              onClick={(e) => e.stopPropagation()}>
+              <div className="reviews-modal-header">
+                <div>
+                  <h3>{viewing3D.name}</h3>
+                  <p style={{ color: 'var(--t3)', fontSize: '0.75rem', marginTop: 2 }}>Drag to rotate · Pinch to zoom · AR on mobile</p>
+                </div>
+                <button className="cart-close" onClick={() => setViewing3D(null)}>✕</button>
+              </div>
+              <div className="viewer3d-wrap">
+                <model-viewer
+                  src={viewing3D.model3dUrl}
+                  alt={viewing3D.name}
+                  ar
+                  ar-modes="webxr scene-viewer quick-look"
+                  camera-controls
+                  auto-rotate
+                  shadow-intensity="1"
+                  style={{ width: '100%', height: '420px', background: 'var(--ink-3)' }}
+                />
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* 360 PRODUCT VIEWER */}
+      <AnimatePresence>
+        {viewing360 && (
+          <Product360Viewer 
+            images={viewing360.images!} 
+            productName={viewing360.name} 
+            onClose={() => setViewing360(null)} 
+          />
+        )}
+      </AnimatePresence>
+
+      {/* PRICE DROP ALERT MODAL */}
+      <AnimatePresence>
+        {priceAlertProduct && (
+          <motion.div className="cart-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            onClick={() => setPriceAlertProduct(null)}>
+            <motion.div className="reviews-modal" style={{ maxHeight: 'auto' }}
+              initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }}
+              onClick={(e) => e.stopPropagation()}>
+              <div className="reviews-modal-header">
+                <div>
+                  <h3>PRICE DROP ALERT</h3>
+                  <p style={{ color: 'var(--t3)', fontSize: '0.75rem', marginTop: 2 }}>{priceAlertProduct.name}</p>
+                </div>
+                <button className="cart-close" onClick={() => setPriceAlertProduct(null)}>✕</button>
+              </div>
+              <div style={{ padding: 24 }}>
+                <p style={{ color: '#777', marginBottom: 16, fontSize: '0.85rem' }}>
+                  Current price: <strong style={{ color: 'var(--t1)' }}>${priceAlertProduct.price.toFixed(2)}</strong>.
+                  We'll email you when it drops to or below your target.
+                </p>
+                <input className="profile-input" type="email" placeholder="your@email.com"
+                  value={priceAlertEmail} onChange={(e) => setPriceAlertEmail(e.target.value)} />
+                <input className="profile-input" type="number" step="0.01" placeholder="Target price ($)"
+                  value={priceAlertThreshold} onChange={(e) => setPriceAlertThreshold(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handlePriceAlert()} />
+                <motion.button className="profile-save-btn" style={{ width: '100%', marginTop: 8 }}
+                  onClick={handlePriceAlert} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}>
+                  NOTIFY ME
+                </motion.button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* STOCK ALERT MODAL */}
       <AnimatePresence>

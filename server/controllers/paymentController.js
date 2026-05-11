@@ -54,7 +54,6 @@ const sendThankYouEmail = async (email, username, orderId, items, total, discoun
 
 const decreaseStock = (productId, quantity) =>
   new Promise((resolve, reject) => {
-    // Only decrease if stock >= quantity — prevents overselling
     getDB().run(
       'UPDATE products SET stock = stock - ? WHERE id = ? AND stock >= ?',
       [quantity, productId, quantity],
@@ -66,6 +65,82 @@ const decreaseStock = (productId, quantity) =>
     );
   });
 
+const dbRun = (sql, params = []) =>
+  new Promise((resolve, reject) =>
+    getDB().run(sql, params, function (e) { e ? reject(e) : resolve(this); })
+  );
+
+const dbGet = (sql, params = []) =>
+  new Promise((resolve, reject) =>
+    getDB().get(sql, params, (e, r) => (e ? reject(e) : resolve(r || null)))
+  );
+
+/**
+ * Core fulfillment logic — called by both webhook and confirmOrder.
+ * Returns { orderId, total, alreadyFulfilled } or throws on hard errors.
+ * Idempotent: safe to call twice for the same paymentIntentId.
+ */
+const fulfillStripeOrder = async (paymentIntent, io) => {
+  const paymentIntentId = paymentIntent.id;
+  const userId = parseInt(paymentIntent.metadata.userId, 10);
+  const discount = parseFloat(paymentIntent.metadata.discount ?? '0');
+  const couponCode = paymentIntent.metadata.couponCode || null;
+
+  // Idempotency — if the order already exists, nothing to do
+  const existing = await dbGet('SELECT id, total FROM orders WHERE stripePaymentIntentId = ?', [paymentIntentId]);
+  if (existing) return { orderId: existing.id, total: existing.total, alreadyFulfilled: true };
+
+  const items = await cartModel.getByUser(userId);
+  if (!items.length) throw Object.assign(new Error('Cart already processed'), { cartEmpty: true });
+
+  // Final stock gate
+  for (const item of items) {
+    const row = await dbGet('SELECT stock FROM products WHERE id = ?', [item.productId]);
+    if (!row || row.stock < item.quantity) {
+      throw Object.assign(
+        new Error(`Sorry, "${item.name}" sold out while you were checking out.`),
+        { productId: item.productId, stockError: true }
+      );
+    }
+  }
+
+  const subtotal = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
+  const total = Math.max(subtotal - discount, 0);
+
+  await dbRun('BEGIN');
+  let orderId;
+  try {
+    const order = await orderModel.create(userId, total, discount, couponCode, paymentIntentId);
+    orderId = order.lastID;
+    for (const item of items) {
+      await orderModel.addItem(orderId, item.productId, item.name, item.price, item.quantity, item.size);
+      await decreaseStock(item.productId, item.quantity);
+    }
+    if (couponCode) await couponModel.incrementUse(couponCode);
+    await cartModel.clearCart(userId);
+    await dbRun('COMMIT');
+  } catch (e) {
+    await dbRun('ROLLBACK').catch(() => {});
+    throw e;
+  }
+
+  // Non-blocking post-commit side-effects
+  for (const item of items) {
+    getDB().get('SELECT stock FROM products WHERE id = ?', [item.productId], (_, row) => {
+      io?.emit('stock_update', { productId: item.productId, stock: row?.stock ?? 0 });
+    });
+  }
+  awardPoints(userId, total).catch((e) => console.error('Loyalty points error:', e.message));
+  getDB().get('SELECT username, email FROM users WHERE id = ?', [userId], (err, user) => {
+    if (!err && user) {
+      sendThankYouEmail(user.email, user.username, orderId, items, total, discount)
+        .catch((e) => console.error('Thank you email failed:', e.message));
+    }
+  });
+
+  return { orderId, total, alreadyFulfilled: false };
+};
+
 exports.createPaymentIntent = async (req, res) => {
   try {
     const userId = req.user.userId;
@@ -74,13 +149,8 @@ exports.createPaymentIntent = async (req, res) => {
     const items = await cartModel.getByUser(userId);
     if (!items.length) return res.status(400).json({ message: 'Cart is empty' });
 
-    // Validate stock for every cart item before charging
     for (const item of items) {
-      const product = await new Promise((resolve, reject) => {
-        getDB().get('SELECT name, stock FROM products WHERE id = ?', [item.productId], (err, row) => {
-          if (err) reject(err); else resolve(row);
-        });
-      });
+      const product = await dbGet('SELECT name, stock FROM products WHERE id = ?', [item.productId]);
       if (!product || product.stock < item.quantity) {
         return res.status(400).json({
           message: `"${item.name}" only has ${product?.stock ?? 0} left in stock but your cart has ${item.quantity}. Please update your cart.`,
@@ -95,9 +165,7 @@ exports.createPaymentIntent = async (req, res) => {
 
     if (couponCode) {
       const result = await validateCoupon(couponCode, subtotal);
-      if (!result.valid) {
-        return res.status(400).json({ message: result.message });
-      }
+      if (!result.valid) return res.status(400).json({ message: result.message });
       discount = result.discount;
       appliedCoupon = result.coupon;
     }
@@ -121,7 +189,9 @@ exports.createPaymentIntent = async (req, res) => {
       subtotal,
       discount,
       total,
-      couponApplied: appliedCoupon ? { code: appliedCoupon.code, discountType: appliedCoupon.discountType, discountValue: appliedCoupon.discountValue } : null,
+      couponApplied: appliedCoupon
+        ? { code: appliedCoupon.code, discountType: appliedCoupon.discountType, discountValue: appliedCoupon.discountValue }
+        : null,
     });
   } catch (err) {
     console.error('PaymentIntent error:', err.message);
@@ -140,79 +210,17 @@ exports.confirmOrder = async (req, res) => {
     if (paymentIntent.metadata.userId !== String(userId))
       return res.status(403).json({ message: 'Unauthorized' });
 
-    // Idempotency guard — if this payment intent already has an order, return it
-    const existing = await new Promise((resolve, reject) =>
-      getDB().get('SELECT id, total FROM orders WHERE stripePaymentIntentId = ?', [paymentIntentId], (e, r) => e ? reject(e) : resolve(r || null))
-    );
-    if (existing) return res.status(200).json({ message: 'Order already placed', orderId: existing.id, total: existing.total });
-
-    const items = await cartModel.getByUser(userId);
-    if (!items.length) return res.status(400).json({ message: 'Cart already processed' });
-
-    // Final stock gate — catches race conditions between payment and fulfillment
-    for (const item of items) {
-      const row = await new Promise((resolve, reject) => {
-        getDB().get('SELECT stock FROM products WHERE id = ?', [item.productId], (err, r) => {
-          if (err) reject(err); else resolve(r);
-        });
-      });
-      if (!row || row.stock < item.quantity) {
-        return res.status(400).json({
-          message: `Sorry, "${item.name}" sold out while you were checking out. Please update your cart.`,
-          productId: item.productId,
-        });
-      }
-    }
-
-    const subtotal = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
-    const discount = parseFloat(paymentIntent.metadata.discount ?? '0');
-    const couponCode = paymentIntent.metadata.couponCode || null;
-    const total = Math.max(subtotal - discount, 0);
-
-    const dbRun = (sql, params = []) => new Promise((resolve, reject) =>
-      getDB().run(sql, params, function (e) { e ? reject(e) : resolve(this); })
-    );
-
-    // Atomic transaction — if anything fails mid-way, all DB changes are rolled back
-    await dbRun('BEGIN');
-    let orderId;
-    try {
-      const order = await orderModel.create(userId, total, discount, couponCode, paymentIntentId);
-      orderId = order.lastID;
-      for (const item of items) {
-        await orderModel.addItem(orderId, item.productId, item.name, item.price, item.quantity, item.size);
-        await decreaseStock(item.productId, item.quantity);
-      }
-      if (couponCode) await couponModel.incrementUse(couponCode);
-      await cartModel.clearCart(userId);
-      await dbRun('COMMIT');
-    } catch (e) {
-      await dbRun('ROLLBACK').catch(() => {});
-      throw e;
-    }
-
-    // Post-commit side-effects (non-blocking, failures don't affect the order)
-    for (const item of items) {
-      getDB().get('SELECT stock FROM products WHERE id = ?', [item.productId], (_, row) => {
-        req.app.locals.io?.emit('stock_update', { productId: item.productId, stock: row?.stock ?? 0 });
-      });
-    }
-    awardPoints(userId, total).catch((e) => console.error('Loyalty points error:', e.message));
-    getDB().get('SELECT username, email FROM users WHERE id = ?', [userId], (err, user) => {
-      if (!err && user) {
-        sendThankYouEmail(user.email, user.username, orderId, items, total, discount)
-          .catch((e) => console.error('Thank you email failed:', e.message));
-      }
-    });
-
+    const { orderId, total } = await fulfillStripeOrder(paymentIntent, req.app.locals.io);
     res.status(201).json({ message: 'Order placed', orderId, total });
   } catch (err) {
+    if (err.stockError) return res.status(400).json({ message: err.message, productId: err.productId });
+    if (err.cartEmpty) return res.status(400).json({ message: 'Cart already processed' });
     console.error('Confirm order error:', err.message);
     res.status(500).json({ message: 'Failed to confirm order' });
   }
 };
 
-exports.webhook = (req, res) => {
+exports.webhook = async (req, res) => {
   const sig = req.headers['stripe-signature'];
   let event;
   try {
@@ -220,8 +228,16 @@ exports.webhook = (req, res) => {
   } catch (err) {
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
-  if (event.type === 'payment_intent.succeeded') {
-    console.log('PaymentIntent succeeded via webhook:', event.data.object.id);
-  }
+
+  // Respond to Stripe immediately — fulfillment runs async
   res.json({ received: true });
+
+  if (event.type === 'payment_intent.succeeded') {
+    const paymentIntent = event.data.object;
+    fulfillStripeOrder(paymentIntent, req.app.locals.io).then(({ orderId, alreadyFulfilled }) => {
+      if (!alreadyFulfilled) console.log(`Webhook fulfilled order #${orderId} for PI ${paymentIntent.id}`);
+    }).catch((err) => {
+      console.error(`Webhook fulfillment failed for PI ${paymentIntent.id}:`, err.message);
+    });
+  }
 };

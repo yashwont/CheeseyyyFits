@@ -25,10 +25,10 @@ const get = (sql, params = []) =>
   });
 
 const orderModel = {
-  create: (userId, total, discount = 0, couponCode = null, paymentIntentId = null) =>
+  create: (userId, total, discount = 0, couponCode = null, paymentIntentId = null, status = 'confirmed', paymentMethod = 'stripe') =>
     run(
-      "INSERT INTO orders (userId, total, discount, couponCode, status, stripePaymentIntentId) VALUES (?, ?, ?, ?, 'confirmed', ?)",
-      [userId, total, discount, couponCode, paymentIntentId]
+      'INSERT INTO orders (userId, total, discount, couponCode, status, stripePaymentIntentId, paymentMethod) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [userId, total, discount, couponCode, status, paymentIntentId, paymentMethod]
     ),
 
   addItem: (orderId, productId, name, price, quantity, size) =>

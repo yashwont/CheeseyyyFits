@@ -75,3 +75,24 @@ exports.removeItem = async (req, res) => {
     res.status(500).json({ message: 'Failed to remove item' });
   }
 };
+
+exports.getSaved = async (req, res) => {
+  try {
+    const items = await cartModel.getByUser(req.user.userId, 1);
+    res.json(items);
+  } catch {
+    res.status(500).json({ message: 'Failed to fetch saved items' });
+  }
+};
+
+exports.toggleSaved = async (req, res) => {
+  try {
+    const item = await cartModel.getItem(req.params.id, req.user.userId);
+    if (!item) return res.status(404).json({ message: 'Cart item not found' });
+    const next = item.savedForLater ? 0 : 1;
+    await cartModel.toggleSavedForLater(req.params.id, req.user.userId, next);
+    res.json({ message: next ? 'Saved for later' : 'Moved back to cart', savedForLater: !!next });
+  } catch {
+    res.status(500).json({ message: 'Failed to toggle saved' });
+  }
+};

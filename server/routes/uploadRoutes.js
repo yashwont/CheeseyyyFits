@@ -5,6 +5,7 @@ const uploadController = require('../controllers/uploadController');
 const { authenticate, requireAdmin } = require('../middleware/auth');
 
 router.post('/', authenticate, requireAdmin, upload.single('image'), uploadController.uploadImage);
+router.post('/multiple', authenticate, requireAdmin, upload.array('images', 24), uploadController.uploadMultiple);
 router.delete('/', authenticate, requireAdmin, uploadController.deleteImage);
 
 module.exports = router;

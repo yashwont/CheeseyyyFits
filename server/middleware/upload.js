@@ -16,14 +16,32 @@ const storage = new CloudinaryStorage({
   cloudinary,
   params: {
     folder: 'cheezeyy-products',
-    allowed_formats: ['jpg', 'jpeg', 'png', 'webp'],
-    transformation: [{ width: 800, height: 800, crop: 'limit', quality: 'auto' }],
+    allowed_formats: ['jpg', 'jpeg', 'png', 'webp', 'glb', 'gltf'],
+    transformation: (req, file) => {
+      if (file.originalname.match(/\.(glb|gltf)$/)) return undefined;
+      return [{ width: 800, height: 800, crop: 'limit', quality: 'auto' }];
+    },
+    resource_type: 'auto'
   },
 });
 
 const upload = multer({
   storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+  limits: { fileSize: 20 * 1024 * 1024 }, // Increased to 20MB for 3D models
 });
 
-module.exports = { upload, cloudinary };
+const avatarStorage = new CloudinaryStorage({
+  cloudinary,
+  params: {
+    folder: 'cheezeyy-avatars',
+    allowed_formats: ['jpg', 'jpeg', 'png', 'webp'],
+    transformation: [{ width: 256, height: 256, crop: 'fill', gravity: 'face', quality: 'auto' }],
+  },
+});
+
+const uploadAvatar = multer({
+  storage: avatarStorage,
+  limits: { fileSize: 2 * 1024 * 1024 },
+});
+
+module.exports = { upload, uploadAvatar, cloudinary };

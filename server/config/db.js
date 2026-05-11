@@ -77,6 +77,7 @@ const connectDB = () => {
         await runAsync(`ALTER TABLE orders ADD COLUMN discount REAL DEFAULT 0`).catch(() => {});
         await runAsync(`ALTER TABLE orders ADD COLUMN couponCode TEXT`).catch(() => {});
         await runAsync(`ALTER TABLE orders ADD COLUMN stripePaymentIntentId TEXT`).catch(() => {});
+        await runAsync(`ALTER TABLE orders ADD COLUMN paymentMethod TEXT DEFAULT 'stripe'`).catch(() => {});
         await runAsync(`CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_payment_intent ON orders(stripePaymentIntentId) WHERE stripePaymentIntentId IS NOT NULL`).catch(() => {});
 
         await runAsync(`CREATE TABLE IF NOT EXISTS order_items (
@@ -191,6 +192,41 @@ const connectDB = () => {
 
         // Profile avatar
         await runAsync(`ALTER TABLE users ADD COLUMN avatar TEXT`).catch(() => {});
+
+        // model3dUrl for AR/3D viewer
+        await runAsync(`ALTER TABLE products ADD COLUMN model3dUrl TEXT`).catch(() => {});
+        await runAsync(`ALTER TABLE products ADD COLUMN lastRestockedAt DATETIME`).catch(() => {});
+        await runAsync(`ALTER TABLE products ADD COLUMN images TEXT`).catch(() => {});
+
+        // Save-for-later inside cart
+        await runAsync(`ALTER TABLE cart_items ADD COLUMN savedForLater INTEGER DEFAULT 0`).catch(() => {});
+
+        // Price drop alerts (mirrors stock_alerts shape)
+        await runAsync(`CREATE TABLE IF NOT EXISTS price_alerts (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          email TEXT NOT NULL,
+          productId INTEGER NOT NULL,
+          thresholdPrice REAL NOT NULL,
+          notified INTEGER DEFAULT 0,
+          createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (productId) REFERENCES products(id) ON DELETE CASCADE,
+          UNIQUE(email, productId)
+        )`).catch(() => {});
+
+        // Trending search tracking
+        await runAsync(`CREATE TABLE IF NOT EXISTS trending_searches (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          query TEXT NOT NULL UNIQUE,
+          count INTEGER DEFAULT 1,
+          updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
+        )`).catch(() => {});
+
+        // Performance indexes
+        await runAsync(`CREATE INDEX IF NOT EXISTS idx_products_category ON products(category)`).catch(() => {});
+        await runAsync(`CREATE INDEX IF NOT EXISTS idx_products_price ON products(price)`).catch(() => {});
+        await runAsync(`CREATE INDEX IF NOT EXISTS idx_products_name ON products(name)`).catch(() => {});
+        await runAsync(`CREATE INDEX IF NOT EXISTS idx_order_items_productId ON order_items(productId)`).catch(() => {});
+        await runAsync(`CREATE INDEX IF NOT EXISTS idx_order_items_orderId ON order_items(orderId)`).catch(() => {});
 
         console.log('All tables ready.');
         resolve();

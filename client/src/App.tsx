@@ -18,6 +18,7 @@ import SupportPanel from './components/SupportPanel';
 import SocialProof from './components/SocialProof';
 import ScrollProgress from './components/ScrollProgress';
 import PageTransition from './components/PageTransition';
+import CookieConsent from './components/CookieConsent';
 import { getRole, isAuthenticated } from './utils/auth';
 
 const NO_CHAT_ROUTES = ['/login', '/register', '/forgot-password', '/contact', '/checkout'];
@@ -60,6 +61,7 @@ function App() {
                 : <LiveChat />
             )}
             <SocialProof />
+            <CookieConsent />
           </div>
         </SocketProvider>
       </ThemeProvider>

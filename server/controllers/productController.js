@@ -35,9 +35,9 @@ exports.getOne = async (req, res) => {
 
 exports.create = async (req, res) => {
   try {
-    const { name, description, price, image, category, size, stock } = req.body;
+    const { name, description, price, image, category, size, stock, model3dUrl } = req.body;
     if (!name || price === undefined) return res.status(400).json({ message: 'Name and price are required' });
-    const result = await productModel.create({ name, description, price, image, category, size, stock });
+    const result = await productModel.create({ name, description, price, image, category, size, stock, model3dUrl });
     res.status(201).json({ message: 'Product created', productId: result.lastID });
   } catch { res.status(500).json({ message: 'Failed to create product' }); }
 };
@@ -46,7 +46,7 @@ exports.update = async (req, res) => {
   try {
     const product = await productModel.findById(req.params.id);
     if (!product) return res.status(404).json({ message: 'Product not found' });
-    const { name, description, price, image, category, size, stock } = req.body;
+    const { name, description, price, image, category, size, stock, model3dUrl } = req.body;
     const wasOutOfStock = product.stock === 0;
     const newStock = stock ?? product.stock;
 
@@ -58,11 +58,19 @@ exports.update = async (req, res) => {
       category: category ?? product.category,
       size: size ?? product.size,
       stock: newStock,
+      model3dUrl: model3dUrl !== undefined ? model3dUrl : (product.model3dUrl ?? null),
     });
 
     // Trigger back-in-stock alerts if stock went from 0 to positive
     if (wasOutOfStock && newStock > 0) {
       notifyRestocked(req.params.id, product.name).catch(console.error);
+      run(`UPDATE products SET lastRestockedAt = CURRENT_TIMESTAMP WHERE id = ?`, [req.params.id]).catch(() => {});
+    }
+
+    // Trigger price-drop alerts if price went down
+    if (price !== undefined && price < product.price) {
+      const { notifyPriceDrop } = require('./priceAlertController');
+      notifyPriceDrop(req.params.id, product.name, price).catch(console.error);
     }
 
     res.json({ message: 'Product updated' });
@@ -130,6 +138,59 @@ exports.bulkAction = async (req, res) => {
       res.status(400).json({ message: 'Unknown action' });
     }
   } catch { res.status(500).json({ message: 'Bulk action failed' }); }
+};
+
+exports.getRestocked = async (req, res) => {
+  try {
+    const products = await all(
+      `SELECT p.*, COALESCE(r.avgRating, 0) as avgRating
+       FROM products p
+       LEFT JOIN (
+         SELECT productId, AVG(rating) as avgRating FROM reviews GROUP BY productId
+       ) r ON r.productId = p.id
+       WHERE p.lastRestockedAt >= datetime('now', '-7 days') AND p.stock > 0
+       ORDER BY p.lastRestockedAt DESC LIMIT 8`
+    );
+    res.json(products);
+  } catch { res.status(500).json({ message: 'Failed to fetch restocked products' }); }
+};
+
+exports.autocomplete = async (req, res) => {
+  try {
+    const q = (req.query.q || '').trim();
+    if (q.length < 1) return res.json({ products: [], trending: [] });
+
+    const term = q.toLowerCase();
+    const products = await all(
+      `SELECT id, name, category, price, image FROM products
+       WHERE LOWER(name) LIKE ? OR LOWER(category) LIKE ?
+       ORDER BY (CASE WHEN LOWER(name) LIKE ? THEN 0 ELSE 1 END), name
+       LIMIT 6`,
+      [`%${term}%`, `%${term}%`, `${term}%`]
+    );
+
+    const trending = await all(
+      `SELECT query FROM trending_searches
+       WHERE LOWER(query) LIKE ? ORDER BY count DESC LIMIT 4`,
+      [`${term}%`]
+    );
+
+    res.json({ products, trending: trending.map((t) => t.query) });
+  } catch {
+    res.json({ products: [], trending: [] });
+  }
+};
+
+exports.trackSearch = async (req, res) => {
+  try {
+    const q = (req.body.q || '').trim().toLowerCase().slice(0, 80);
+    if (q.length < 2) return res.json({ ok: true });
+    await run(`INSERT OR IGNORE INTO trending_searches (query, count) VALUES (?, 0)`, [q]);
+    await run(`UPDATE trending_searches SET count = count + 1, updatedAt = CURRENT_TIMESTAMP WHERE query = ?`, [q]);
+    res.json({ ok: true });
+  } catch {
+    res.json({ ok: true });
+  }
 };
 
 exports.exportCSV = async (req, res) => {

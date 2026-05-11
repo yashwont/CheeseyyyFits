@@ -17,42 +17,64 @@ export default function SocialProof() {
   const [items, setItems] = useState<Proof[]>([]);
   const [current, setCurrent] = useState<Proof | null>(null);
   const [idx, setIdx] = useState(0);
+  const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
     fetchSocialProof().then(setItems).catch(() => {});
   }, []);
 
   useEffect(() => {
-    if (!items.length) return;
-    const show = () => { setCurrent(items[idx % items.length]); setIdx((i) => i + 1); };
-    show();
-    const interval = setInterval(show, 6000);
-    return () => clearInterval(interval);
-  }, [items]);
+    if (!items.length || dismissed) return;
+    const show = () => {
+      setCurrent(items[idx % items.length]);
+      setIdx(i => i + 1);
+    };
+    // First show after 4s, then every 14s
+    const initial = setTimeout(show, 4000);
+    return () => clearTimeout(initial);
+  }, [items, dismissed]);
 
   useEffect(() => {
-    if (!current) return;
-    const t = setTimeout(() => setCurrent(null), 4500);
-    return () => clearTimeout(t);
-  }, [current]);
+    if (!current || dismissed) return;
+    // Show for 3.5s then hide, next show in 14s
+    const hide = setTimeout(() => setCurrent(null), 3500);
+    const next = setTimeout(() => {
+      if (!dismissed) {
+        setCurrent(items[idx % items.length]);
+        setIdx(i => i + 1);
+      }
+    }, 14000);
+    return () => { clearTimeout(hide); clearTimeout(next); };
+  }, [current, dismissed]);
+
+  if (dismissed) return null;
 
   return (
-    <div className="social-proof-container">
+    <div className="sp-wrap">
       <AnimatePresence>
         {current && (
           <motion.div
-            className="social-proof-popup"
-            initial={{ opacity: 0, x: -80, y: 0 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -80 }}
-            transition={{ type: 'spring', stiffness: 260, damping: 28 }}
+            className="sp-toast"
+            initial={{ opacity: 0, y: 12, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 8, scale: 0.96 }}
+            transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
           >
-            <span className="sp-dot" />
-            <div>
-              <p className="sp-name">{current.username.slice(0, 8)}*** purchased</p>
-              <p className="sp-product">{current.productName}</p>
-              <p className="sp-time">{timeAgo(current.createdAt)}</p>
+            <span className="sp-live" />
+            <div className="sp-body">
+              <span className="sp-text">
+                <strong>{current.username.slice(0, 6)}***</strong> bought{' '}
+                <strong>{current.productName}</strong>
+              </span>
+              <span className="sp-when">{timeAgo(current.createdAt)}</span>
             </div>
+            <button
+              className="sp-dismiss"
+              onClick={() => { setCurrent(null); setDismissed(true); }}
+              aria-label="Dismiss"
+            >
+              ✕
+            </button>
           </motion.div>
         )}
       </AnimatePresence>

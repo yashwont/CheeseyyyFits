@@ -1,20 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const authController = require('../controllers/authController');
+const { validateRegister, validateLogin, validateForgotPassword, validateResetPassword } = require('../middleware/validate');
 
-// POST /api/auth/register
-router.post('/register', authController.registerUser);
-
-// POST /api/auth/login
-router.post('/login', authController.loginUser);
-
-// POST /api/auth/verify
+router.post('/register', validateRegister, authController.registerUser);
+router.post('/login', validateLogin, authController.loginUser);
 router.post('/verify', authController.verifyUser);
-
-// POST /api/auth/forgot-password
-router.post('/forgot-password', authController.forgotPassword);
-
-// POST /api/auth/reset-password
-router.post('/reset-password', authController.resetPassword);
+router.post('/forgot-password', validateForgotPassword, authController.forgotPassword);
+router.post('/reset-password', validateResetPassword, authController.resetPassword);
 
 module.exports = router;

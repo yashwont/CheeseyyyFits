@@ -106,6 +106,12 @@ export const uploadImage = (file: File) => {
   return API.post('/upload', form, { headers: { 'Content-Type': 'multipart/form-data' } }).then((r) => r.data);
 };
 
+export const uploadMultipleImages = (files: File[]) => {
+  const form = new FormData();
+  files.forEach(f => form.append('images', f));
+  return API.post('/upload/multiple', form, { headers: { 'Content-Type': 'multipart/form-data' } }).then((r) => r.data);
+};
+
 // Frequently bought together
 export const fetchRelated = (productId: number) =>
   API.get(`/products/${productId}/related`).then((r) => r.data);
@@ -158,3 +164,26 @@ export const forgotPassword = (email: string) =>
   API.post('/auth/forgot-password', { email }).then((r) => r.data);
 export const resetPassword = (email: string, code: string, newPassword: string) =>
   API.post('/auth/reset-password', { email, code, newPassword }).then((r) => r.data);
+
+// Predictive search
+export const fetchAutocomplete = (q: string) =>
+  API.get('/products/autocomplete', { params: { q } }).then((r) => r.data);
+export const trackSearch = (q: string) =>
+  API.post('/products/search-track', { q }).then((r) => r.data).catch(() => {});
+
+// Saved-for-later
+export const fetchSavedItems = () => API.get('/cart/saved').then((r) => r.data);
+export const toggleSavedItem = (id: number) =>
+  API.patch(`/cart/${id}/save`).then((r) => r.data);
+
+// Restocked
+export const fetchRestockedProducts = () =>
+  API.get('/products/restocked').then((r) => r.data);
+
+// Price drop alerts
+export const subscribePriceAlert = (email: string, productId: number, thresholdPrice: number) =>
+  API.post('/price-alerts/subscribe', { email, productId, thresholdPrice }).then((r) => r.data);
+
+// Search analytics (admin)
+export const fetchSearchAnalytics = () =>
+  API.get('/analytics/search').then((r) => r.data);

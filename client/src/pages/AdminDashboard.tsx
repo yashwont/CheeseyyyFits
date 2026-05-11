@@ -10,11 +10,13 @@ import {
 import { clearAuth } from '../utils/auth';
 import AnalyticsTab from '../components/AnalyticsTab';
 import ImageUploader from '../components/ImageUploader';
+import ModelUploader from '../components/ModelUploader';
+import MultiImageUploader from '../components/MultiImageUploader';
 import { bulkProductAction, exportOrdersCSV, exportProductsCSV,
   fetchAllFlashSales, createFlashSale, toggleFlashSale, deleteFlashSale,
   fetchAllReturns, updateReturnStatus, sendMarketingBlast, fetchProducts as apiFetchProducts } from '../api';
 
-type Product = { id: number; name: string; description: string; price: number; image: string; category: string; size: string; stock: number };
+type Product = { id: number; name: string; description: string; price: number; image: string; category: string; size: string; stock: number; model3dUrl?: string; images?: string[] };
 type User = { id: number; username: string; email: string; role: string; isVerified: boolean; avatar?: string; createdAt: string };
 type Order = { id: number; userId: number; username: string; email: string; total: number; discount: number; status: string; createdAt: string; items: OrderItem[] };
 type OrderItem = { id: number; name: string; price: number; quantity: number; size: string };
@@ -24,7 +26,7 @@ type FlashSale = { id: number; productId: number; name: string; salePrice: numbe
 type ReturnReq = { id: number; orderId: number; username: string; email: string; reason: string; details: string; status: string; createdAt: string; total: number };
 type Tab = 'analytics' | 'products' | 'users' | 'orders' | 'coupons' | 'flash-sales' | 'returns' | 'marketing';
 
-const BLANK_PRODUCT = { name: '', description: '', price: '', image: '', category: '', size: '', stock: '' };
+const BLANK_PRODUCT = { name: '', description: '', price: '', image: '', category: '', size: '', stock: '', model3dUrl: '', images: [] as string[] };
 const BLANK_COUPON = { code: '', discountType: 'percentage', discountValue: '', minOrder: '', maxUses: '', expiresAt: '' };
 const CATEGORIES = ['T-Shirts', 'Hoodies', 'Accessories', 'Pants', 'Shoes'];
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'One Size'];
@@ -103,13 +105,34 @@ export default function AdminDashboard() {
 
   const openCreate = () => { setForm(BLANK_PRODUCT); setEditingId(null); setShowForm(true); };
   const openEdit = (p: Product) => {
-    setForm({ name: p.name, description: p.description || '', price: String(p.price), image: p.image || '', category: p.category || '', size: p.size || '', stock: String(p.stock) });
+    let imgs: string[] = [];
+    try {
+      if (typeof p.images === 'string') imgs = JSON.parse(p.images);
+      else if (Array.isArray(p.images)) imgs = p.images;
+    } catch { imgs = []; }
+    
+    setForm({ 
+      name: p.name, 
+      description: p.description || '', 
+      price: String(p.price), 
+      image: p.image || '', 
+      category: p.category || '', 
+      size: p.size || '', 
+      stock: String(p.stock), 
+      model3dUrl: (p as any).model3dUrl || '',
+      images: imgs
+    });
     setEditingId(p.id); setShowForm(true);
   };
 
   const handleSubmitProduct = async () => {
     if (!form.name || !form.price) return toast.error('Name and price are required');
-    const data = { ...form, price: parseFloat(form.price), stock: parseInt(form.stock) || 0 };
+    const data = { 
+      ...form, 
+      price: parseFloat(form.price), 
+      stock: parseInt(form.stock) || 0,
+      images: JSON.stringify(form.images)
+    };
     try {
       if (editingId !== null) { await updateProduct(editingId, data); toast.success('Product updated'); }
       else { await createProduct(data); toast.success('Product created'); }
@@ -257,6 +280,7 @@ export default function AdminDashboard() {
                 <input className="form-input" placeholder="Name *" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
                 <textarea className="form-input form-textarea" placeholder="Description" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
                 <input className="form-input" placeholder="Price *" type="number" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} />
+                <label style={{ fontSize: '10px', color: 'var(--t4)', textTransform: 'uppercase', marginBottom: 4, display: 'block' }}>Product Image (PNG/JPG)</label>
                 <ImageUploader value={form.image} onChange={(url) => setForm({ ...form, image: url })} />
                 <select className="form-input" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
                   <option value="">Select category</option>
@@ -267,6 +291,8 @@ export default function AdminDashboard() {
                   {SIZES.map((s) => <option key={s}>{s}</option>)}
                 </select>
                 <input className="form-input" placeholder="Stock" type="number" value={form.stock} onChange={(e) => setForm({ ...form, stock: e.target.value })} />
+                <MultiImageUploader value={form.images} onChange={(urls) => setForm({ ...form, images: urls })} />
+                <ModelUploader value={form.model3dUrl} onChange={(url) => setForm({ ...form, model3dUrl: url })} />
                 <div className="form-actions">
                   <button className="form-cancel" onClick={() => setShowForm(false)}>CANCEL</button>
                   <button className="form-submit" onClick={handleSubmitProduct}>{editingId ? 'UPDATE' : 'CREATE'}</button>

@@ -9,7 +9,7 @@ import {
 } from '@stripe/react-stripe-js';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
-import { createPaymentIntent, confirmOrder, fetchCart, validateCoupon } from '../api';
+import { createPaymentIntent, confirmOrder, fetchCart } from '../api';
 
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
 
@@ -18,7 +18,6 @@ type CartItem = {
   price: number; quantity: number; size: string; image: string;
 };
 
-// Inner form — rendered inside <Elements>
 function CheckoutForm({ total, onSuccess }: { total: number; onSuccess: (orderId: number) => void }) {
   const stripe = useStripe();
   const elements = useElements();
@@ -53,18 +52,13 @@ function CheckoutForm({ total, onSuccess }: { total: number; onSuccess: (orderId
 
   return (
     <form onSubmit={handleSubmit} className="checkout-form">
-      <PaymentElement
-        options={{
-          layout: 'tabs',
-          appearance: { theme: 'night', variables: { colorPrimary: '#ff0000', borderRadius: '0px' } },
-        }}
-      />
+      <PaymentElement options={{ layout: 'tabs' }} />
       <motion.button
         type="submit"
         className="checkout-pay-btn"
         disabled={!stripe || loading}
-        whileHover={!loading ? { scale: 1.02, boxShadow: '0 0 28px rgba(255,0,0,0.5)' } : {}}
-        whileTap={!loading ? { scale: 0.98 } : {}}
+        whileHover={!loading ? { scale: 1.015, boxShadow: '0 0 28px rgba(232,0,13,0.45)' } : {}}
+        whileTap={!loading ? { scale: 0.985 } : {}}
         style={{ marginTop: 24 }}
       >
         {loading ? 'Processing...' : `Pay $${total.toFixed(2)}`}
@@ -119,7 +113,6 @@ export default function CheckoutPage() {
     setCouponLoading(true);
     try {
       const data = await createPaymentIntent(couponInput.trim());
-      // Only mark as applied if server confirmed it
       if (!data.couponApplied) {
         toast.error('Coupon could not be applied');
         return;
@@ -132,7 +125,9 @@ export default function CheckoutPage() {
       toast.success(`${data.couponApplied.code} applied — $${data.discount.toFixed(2)} off!`);
     } catch (err: any) {
       toast.error(err.response?.data?.message ?? 'Invalid coupon code');
-    } finally { setCouponLoading(false); }
+    } finally {
+      setCouponLoading(false);
+    }
   };
 
   const handleRemoveCoupon = async () => {
@@ -141,47 +136,64 @@ export default function CheckoutPage() {
     await initIntent();
   };
 
-  const handleSuccess = (id: number) => {
-    setOrderId(id);
-  };
-
   if (orderId) {
     return (
-      <div className="checkout-page">
+      <div className="checkout-success-outer">
         <motion.div
           className="checkout-success"
-          initial={{ opacity: 0, scale: 0.85 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ type: 'spring', stiffness: 240, damping: 22 }}
+          initial={{ opacity: 0, y: 32, scale: 0.92 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ type: 'spring', stiffness: 220, damping: 24 }}
         >
+          <motion.div
+            initial={{ opacity: 0, scale: 0 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: 0.25, type: 'spring', stiffness: 300, damping: 20 }}
+            style={{ marginBottom: 6 }}
+          >
+            <div className="checkout-order-badge">ORDER CONFIRMED</div>
+          </motion.div>
+
           <motion.div
             className="success-icon"
             initial={{ scale: 0 }}
             animate={{ scale: 1 }}
-            transition={{ delay: 0.2, type: 'spring', stiffness: 300 }}
+            transition={{ delay: 0.38, type: 'spring', stiffness: 280, damping: 18 }}
           >
             ✓
           </motion.div>
-          <h2>Order Placed!</h2>
-          <p>Order <strong>#{orderId}</strong> confirmed. Thank you for shopping with us.</p>
-          <div className="success-actions">
+
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.52 }}
+          >
+            <h2>Order Placed!</h2>
+            <div className="checkout-order-num">#{String(orderId).padStart(6, '0')}</div>
+            <p>Thank you for shopping with CHEEZEYY FITS. You'll receive a confirmation email shortly.</p>
+          </motion.div>
+
+          <motion.div
+            className="success-actions"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.66 }}
+          >
             <motion.button
               className="checkout-pay-btn"
               onClick={() => navigate('/dashboard')}
-              whileHover={{ scale: 1.04 }}
-              whileTap={{ scale: 0.97 }}
+              whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
             >
               Continue Shopping
             </motion.button>
             <motion.button
               className="checkout-secondary-btn"
               onClick={() => navigate('/dashboard?tab=orders')}
-              whileHover={{ scale: 1.04 }}
-              whileTap={{ scale: 0.97 }}
+              whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
             >
-              View Orders
+              View My Orders
             </motion.button>
-          </div>
+          </motion.div>
         </motion.div>
       </div>
     );
@@ -189,29 +201,59 @@ export default function CheckoutPage() {
 
   return (
     <div className="checkout-page">
-      <motion.button
-        className="auth-back-btn"
-        onClick={() => navigate('/dashboard')}
-        initial={{ opacity: 0, x: -20 }}
-        animate={{ opacity: 1, x: 0 }}
-        whileHover={{ x: -4 }}
+      {/* ── Checkout header ── */}
+      <motion.div
+        className="checkout-header"
+        initial={{ opacity: 0, y: -16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4 }}
       >
-        ← Back to Cart
-      </motion.button>
+        <span className="checkout-logo" onClick={() => navigate('/')}>
+          CHEEZEYY FITS
+        </span>
+
+        <div className="checkout-progress">
+          <div className="cp-step done">
+            <div className="cp-num">✓</div>
+            <span>Cart</span>
+          </div>
+          <div className="cp-sep done" />
+          <div className="cp-step active">
+            <div className="cp-num">2</div>
+            <span>Checkout</span>
+          </div>
+          <div className="cp-sep" />
+          <div className="cp-step">
+            <div className="cp-num">3</div>
+            <span>Confirm</span>
+          </div>
+        </div>
+
+        <motion.button
+          className="auth-back-btn"
+          onClick={() => navigate('/dashboard')}
+          style={{ position: 'static' }}
+          whileHover={{ x: -3 }}
+        >
+          ← Cart
+        </motion.button>
+      </motion.div>
 
       <div className="checkout-layout">
-        {/* Order Summary */}
+        {/* ── Order Summary ── */}
         <motion.div
           className="checkout-summary"
-          initial={{ opacity: 0, x: -30 }}
+          initial={{ opacity: 0, x: -24 }}
           animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.4 }}
+          transition={{ duration: 0.4, delay: 0.1 }}
         >
           <h2 className="checkout-title">ORDER SUMMARY</h2>
           <div className="checkout-items">
-            {cart.map((item) => (
+            {cart.map(item => (
               <div key={item.id} className="checkout-item">
-                {item.image && <img src={item.image} alt={item.name} className="checkout-item-img" />}
+                {item.image && (
+                  <img src={item.image} alt={item.name} className="checkout-item-img" />
+                )}
                 <div className="checkout-item-info">
                   <p className="checkout-item-name">{item.name}</p>
                   {item.size && <p className="checkout-item-meta">{item.size}</p>}
@@ -223,35 +265,50 @@ export default function CheckoutPage() {
               </div>
             ))}
           </div>
+
           <div className="checkout-subtotal">
             <span>Subtotal</span><span>${subtotal.toFixed(2)}</span>
           </div>
           {discount > 0 && (
-            <div className="checkout-subtotal" style={{ color: '#33cc33' }}>
+            <div className="checkout-subtotal" style={{ color: 'var(--green)' }}>
               <span>Discount {couponApplied && `(${couponApplied.code})`}</span>
-              <span>-${discount.toFixed(2)}</span>
+              <span>−${discount.toFixed(2)}</span>
             </div>
           )}
           <div className="checkout-subtotal">
-            <span>Shipping</span><span style={{ color: '#33cc33' }}>Free</span>
+            <span>Shipping</span>
+            <span style={{ color: 'var(--green)' }}>Free</span>
           </div>
           <div className="checkout-total-row">
             <span>Total</span><span>${total.toFixed(2)}</span>
           </div>
 
-          {/* Coupon input */}
+          {/* Coupon */}
           <div className="coupon-row">
             {couponApplied ? (
               <div className="coupon-applied">
-                <span>🏷 {couponApplied.code} — {couponApplied.discountType === 'percentage' ? `${couponApplied.discountValue}% off` : `$${couponApplied.discountValue} off`}</span>
+                <span>
+                  🏷 {couponApplied.code} —{' '}
+                  {couponApplied.discountType === 'percentage'
+                    ? `${couponApplied.discountValue}% off`
+                    : `$${couponApplied.discountValue} off`}
+                </span>
                 <button onClick={handleRemoveCoupon} className="coupon-remove">✕</button>
               </div>
             ) : (
               <div className="coupon-input-row">
-                <input className="coupon-input" placeholder="Coupon code" value={couponInput}
-                  onChange={(e) => setCouponInput(e.target.value.toUpperCase())}
-                  onKeyDown={(e) => e.key === 'Enter' && handleApplyCoupon()} />
-                <button className="coupon-apply-btn" onClick={handleApplyCoupon} disabled={couponLoading}>
+                <input
+                  className="coupon-input"
+                  placeholder="Coupon code"
+                  value={couponInput}
+                  onChange={e => setCouponInput(e.target.value.toUpperCase())}
+                  onKeyDown={e => e.key === 'Enter' && handleApplyCoupon()}
+                />
+                <button
+                  className="coupon-apply-btn"
+                  onClick={handleApplyCoupon}
+                  disabled={couponLoading}
+                >
                   {couponLoading ? '...' : 'APPLY'}
                 </button>
               </div>
@@ -259,12 +316,12 @@ export default function CheckoutPage() {
           </div>
         </motion.div>
 
-        {/* Payment */}
+        {/* ── Payment ── */}
         <motion.div
           className="checkout-payment"
-          initial={{ opacity: 0, x: 30 }}
+          initial={{ opacity: 0, x: 24 }}
           animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.4, delay: 0.1 }}
+          transition={{ duration: 0.4, delay: 0.18 }}
         >
           <h2 className="checkout-title">PAYMENT</h2>
           <p className="checkout-test-note">
@@ -278,10 +335,13 @@ export default function CheckoutPage() {
               stripe={stripePromise}
               options={{
                 clientSecret,
-                appearance: { theme: 'night', variables: { colorPrimary: '#ff0000', borderRadius: '0px', fontFamily: 'Arial, sans-serif' } },
+                appearance: {
+                  theme: 'night',
+                  variables: { colorPrimary: '#e8000d', borderRadius: '0px', fontFamily: 'Arial, sans-serif' },
+                },
               }}
             >
-              <CheckoutForm total={total} onSuccess={handleSuccess} />
+              <CheckoutForm total={total} onSuccess={id => setOrderId(id)} />
             </Elements>
           ) : null}
         </motion.div>

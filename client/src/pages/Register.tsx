@@ -1,9 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { registerUser, verifyUser } from '../services/authService';
 import { isAuthenticated, getRole } from '../utils/auth';
 import toast from 'react-hot-toast';
+
+const DIGIT_COUNT = 6;
 
 function Register() {
   const navigate = useNavigate();
@@ -11,8 +13,10 @@ function Register() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [step, setStep] = useState<'form' | 'otp'>('form');
-  const [otp, setOtp] = useState('');
+  const [digits, setDigits] = useState<string[]>(Array(DIGIT_COUNT).fill(''));
   const [loading, setLoading] = useState(false);
+  const [showPw, setShowPw] = useState(false);
+  const digitRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   useEffect(() => {
     if (isAuthenticated()) {
@@ -20,127 +24,242 @@ function Register() {
     }
   }, [navigate]);
 
+  const otp = digits.join('');
+
+  const handleDigit = (i: number, val: string) => {
+    if (!/^\d?$/.test(val)) return;
+    const next = [...digits];
+    next[i] = val.slice(-1);
+    setDigits(next);
+    if (val && i < DIGIT_COUNT - 1) digitRefs.current[i + 1]?.focus();
+  };
+
+  const handleDigitKey = (i: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Backspace' && !digits[i] && i > 0) digitRefs.current[i - 1]?.focus();
+    if (e.key === 'Enter' && otp.length === DIGIT_COUNT) handleVerify();
+  };
+
+  const handleDigitPaste = (e: React.ClipboardEvent) => {
+    e.preventDefault();
+    const text = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, DIGIT_COUNT);
+    if (!text) return;
+    const next = Array(DIGIT_COUNT).fill('');
+    text.split('').forEach((ch, i) => { next[i] = ch; });
+    setDigits(next);
+    digitRefs.current[Math.min(text.length, DIGIT_COUNT - 1)]?.focus();
+  };
+
   const handleRegister = async () => {
     if (!username || !email || !password) return toast.error('Please fill in all fields');
+    if (loading) return;
     setLoading(true);
     try {
       await registerUser(username, email, password);
       toast.success('Check your email for the verification code.');
       setStep('otp');
+      setTimeout(() => digitRefs.current[0]?.focus(), 320);
     } catch (err: any) {
-      toast.error(err.message);
+      toast.error(err?.message || 'Registration failed');
     } finally {
       setLoading(false);
     }
   };
 
   const handleVerify = async () => {
-    if (!otp) return toast.error('Enter the verification code');
+    if (otp.length !== DIGIT_COUNT) return toast.error('Enter the 6-digit code');
+    if (loading) return;
     setLoading(true);
     try {
       await verifyUser(email, otp);
       toast.success('Email verified! You can now login.');
       navigate('/login');
     } catch (err: any) {
-      toast.error(err.message);
+      toast.error(err?.message || 'Verification failed');
     } finally {
       setLoading(false);
     }
   };
 
   const stepVariants = {
-    initial: { opacity: 0, x: 40 },
-    animate: { opacity: 1, x: 0 },
-    exit: { opacity: 0, x: -40 },
+    initial: { opacity: 0, x: 36 },
+    animate: { opacity: 1, x: 0, transition: { duration: 0.32 } },
+    exit: { opacity: 0, x: -36, transition: { duration: 0.2 } },
   };
 
   return (
     <div className="auth-page">
-      <motion.button
-        className="auth-back-btn"
-        onClick={() => step === 'otp' ? setStep('form') : navigate('/')}
-        initial={{ opacity: 0, x: -20 }}
-        animate={{ opacity: 1, x: 0 }}
-        whileHover={{ x: -4 }}
-        transition={{ duration: 0.3 }}
-      >
-        ← {step === 'otp' ? 'Back to form' : 'Back'}
-      </motion.button>
-
+      {/* ── Left editorial panel ── */}
       <motion.div
-        className="modal"
-        initial={{ opacity: 0, scale: 0.88, y: 30 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        transition={{ type: 'spring', stiffness: 260, damping: 22 }}
+        className="auth-panel-left"
+        initial={{ opacity: 0, x: -50 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ duration: 0.65, ease: [0.22, 1, 0.36, 1] }}
       >
-        <AnimatePresence mode="wait">
-          {step === 'form' ? (
-            <motion.div key="form" variants={stepVariants} initial="initial" animate="animate" exit="exit" transition={{ duration: 0.25 }}>
-              <h2 style={{ marginBottom: 20 }}>Register</h2>
-              {[
-                { placeholder: 'Username', value: username, setter: setUsername, type: 'text' },
-                { placeholder: 'Email', value: email, setter: setEmail, type: 'email' },
-                { placeholder: 'Password', value: password, setter: setPassword, type: 'password' },
-              ].map(({ placeholder, value, setter, type }, i) => (
-                <motion.input
-                  key={placeholder}
-                  type={type}
-                  placeholder={placeholder}
-                  value={value}
-                  onChange={(e) => setter(e.target.value)}
-                  initial={{ opacity: 0, x: -16 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: i * 0.08 }}
-                />
-              ))}
-              <motion.button
-                className="auth-btn"
-                onClick={handleRegister}
-                disabled={loading}
-                whileHover={{ scale: 1.03, boxShadow: '0 0 20px rgba(255,0,0,0.5)' }}
-                whileTap={{ scale: 0.97 }}
-              >
-                {loading ? 'Creating account...' : 'Create Account'}
-              </motion.button>
-              <p className="switch">
-                <Link to="/login" style={{ color: 'inherit', textDecoration: 'none' }}>
-                  Already have account? Login
-                </Link>
-              </p>
-            </motion.div>
-          ) : (
-            <motion.div key="otp" variants={stepVariants} initial="initial" animate="animate" exit="exit" transition={{ duration: 0.25 }}>
-              <h2 style={{ marginBottom: 10 }}>Verify Email</h2>
-              <motion.p
-                style={{ color: '#aaa', margin: '10px 0 20px', fontSize: '0.85rem', lineHeight: 1.5 }}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.1 }}
-              >
-                Enter the code sent to <strong style={{ color: 'white' }}>{email}</strong>
-              </motion.p>
-              <motion.input
-                placeholder="6-digit code"
-                value={otp}
-                onChange={(e) => setOtp(e.target.value)}
-                maxLength={6}
-                style={{ letterSpacing: '6px', fontSize: '1.2rem', textAlign: 'center' }}
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: 0.15 }}
-              />
-              <motion.button
-                className="auth-btn"
-                onClick={handleVerify}
-                disabled={loading}
-                whileHover={{ scale: 1.03, boxShadow: '0 0 20px rgba(255,0,0,0.5)' }}
-                whileTap={{ scale: 0.97 }}
-              >
-                {loading ? 'Verifying...' : 'Verify OTP'}
-              </motion.button>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        <div
+          className="auth-panel-brand"
+          onClick={() => navigate('/')}
+          style={{ cursor: 'pointer' }}
+        >
+          CF
+        </div>
+        <div>
+          <div className="auth-panel-tagline">
+            Join the<br />movement.<br />Own the<br />look.
+          </div>
+          <div className="auth-panel-sub">Street fashion since 2026.</div>
+          <div className="auth-panel-badges">
+            <span>✦ 10,000+ Members</span>
+            <span>◈ Free Returns</span>
+            <span>🔒 Secure Checkout</span>
+          </div>
+        </div>
+      </motion.div>
+
+      {/* ── Right form panel ── */}
+      <motion.div
+        className="auth-panel-right"
+        style={{ position: 'relative' }}
+        initial={{ opacity: 0, x: 50 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ duration: 0.65, delay: 0.08, ease: [0.22, 1, 0.36, 1] }}
+      >
+        <motion.button
+          className="auth-back-btn"
+          style={{ position: 'absolute', top: 24, left: 24 }}
+          onClick={() => step === 'otp' ? setStep('form') : navigate('/')}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.55 }}
+        >
+          ← {step === 'otp' ? 'Back' : 'Home'}
+        </motion.button>
+
+        <motion.div
+          className="modal"
+          initial={{ opacity: 0, y: 24 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.22, duration: 0.45 }}
+        >
+          {/* Step indicator */}
+          <div className="auth-steps">
+            <div className={`auth-step ${step === 'form' ? 'active' : 'done'}`}>
+              <div className="auth-step-num">{step === 'form' ? '1' : '✓'}</div>
+              <div className="auth-step-label">Details</div>
+            </div>
+            <div className={`auth-step-line ${step === 'otp' ? 'filled' : ''}`}>
+              <div className="auth-step-line-fill" />
+            </div>
+            <div className={`auth-step ${step === 'otp' ? 'active' : ''}`}>
+              <div className="auth-step-num">2</div>
+              <div className="auth-step-label">Verify</div>
+            </div>
+          </div>
+
+          <AnimatePresence mode="wait">
+            {step === 'form' ? (
+              <motion.div key="form" variants={stepVariants} initial="initial" animate="animate" exit="exit">
+                <div className="section-label" style={{ marginBottom: 14 }}>CREATE ACCOUNT</div>
+                <h2 className="modal-heading">Join Us</h2>
+                <p className="modal-sub">Start your streetwear journey</p>
+
+                <div className="input-float">
+                  <input
+                    type="text" id="reg-username" placeholder=" "
+                    value={username} onChange={e => setUsername(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && handleRegister()}
+                    autoComplete="username"
+                  />
+                  <label htmlFor="reg-username">Username</label>
+                  <span className="input-float-line" />
+                </div>
+
+                <div className="input-float">
+                  <input
+                    type="email" id="reg-email" placeholder=" "
+                    value={email} onChange={e => setEmail(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && handleRegister()}
+                    autoComplete="email"
+                  />
+                  <label htmlFor="reg-email">Email Address</label>
+                  <span className="input-float-line" />
+                </div>
+
+                <div className="input-float">
+                  <input
+                    type={showPw ? 'text' : 'password'} id="reg-pw" placeholder=" "
+                    value={password} onChange={e => setPassword(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && handleRegister()}
+                    autoComplete="new-password"
+                  />
+                  <label htmlFor="reg-pw">Password</label>
+                  <span className="input-float-line" />
+                  <button className="pw-toggle" type="button" onClick={() => setShowPw(v => !v)}>
+                    {showPw ? 'HIDE' : 'SHOW'}
+                  </button>
+                </div>
+
+                <motion.button
+                  className="auth-btn" onClick={handleRegister} disabled={loading}
+                  whileHover={!loading ? { scale: 1.015 } : {}} whileTap={!loading ? { scale: 0.985 } : {}}
+                >
+                  <span>{loading ? 'Creating Account...' : 'Create Account'}</span>
+                </motion.button>
+
+                <div className="auth-divider"><span>OR</span></div>
+
+                <p className="switch">
+                  Already a member?{' '}
+                  <Link to="/login" style={{ color: 'var(--red)', fontWeight: 700 }}>Sign in</Link>
+                </p>
+              </motion.div>
+            ) : (
+              <motion.div key="otp" variants={stepVariants} initial="initial" animate="animate" exit="exit">
+                <div className="section-label" style={{ marginBottom: 14 }}>VERIFY EMAIL</div>
+                <h2 className="modal-heading">Check Inbox</h2>
+                <p className="modal-sub">
+                  We sent a 6-digit code to<br />
+                  <strong style={{ color: 'var(--t2)' }}>{email}</strong>
+                </p>
+
+                <div className="otp-grid">
+                  {digits.map((d, i) => (
+                    <input
+                      key={i}
+                      ref={el => { digitRefs.current[i] = el; }}
+                      className="otp-digit"
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={1}
+                      value={d}
+                      onChange={e => handleDigit(i, e.target.value)}
+                      onKeyDown={e => handleDigitKey(i, e)}
+                      onPaste={i === 0 ? handleDigitPaste : undefined}
+                    />
+                  ))}
+                </div>
+
+                <motion.button
+                  className="auth-btn" onClick={handleVerify}
+                  disabled={loading || otp.length < DIGIT_COUNT}
+                  whileHover={!loading && otp.length === DIGIT_COUNT ? { scale: 1.015 } : {}}
+                  whileTap={!loading && otp.length === DIGIT_COUNT ? { scale: 0.985 } : {}}
+                >
+                  <span>{loading ? 'Verifying...' : 'Verify & Continue'}</span>
+                </motion.button>
+
+                <p className="switch" style={{ marginTop: 16 }}>
+                  Didn't receive it?{' '}
+                  <button
+                    className="link-btn"
+                    onClick={() => { setStep('form'); setDigits(Array(DIGIT_COUNT).fill('')); }}
+                  >
+                    Go back & resend
+                  </button>
+                </p>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </motion.div>
       </motion.div>
     </div>
   );
